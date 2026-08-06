@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="awall">
+  <defs>
+    <linearGradient id="blueStroke" x1="200" y1="200" x2="420" y2="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4AA8FF"/>
+      <stop offset="100%" stop-color="#2F8FF0"/>
+    </linearGradient>
+    <linearGradient id="warmStroke" x1="580" y1="120" x2="820" y2="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F8C22A"/>
+      <stop offset="42%" stop-color="#F87848"/>
+      <stop offset="100%" stop-color="#F83C78"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Thickness 270; pull back slightly from last nudge -->
+  <g transform="rotate(26.5 411 558)">
+    <rect x="276" y="198" width="270" height="724" rx="135" fill="url(#blueStroke)"/>
+  </g>
+
+  <g transform="rotate(-26.5 613 558)">
+    <rect x="478" y="198" width="270" height="724" rx="135" fill="url(#warmStroke)"/>
+  </g>
+</svg>

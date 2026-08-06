@@ -1,0 +1,21 @@
+{
+  "name": "vault-wallpaper",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @vault/web dev",
+    "dev:admin": "pnpm --filter @vault/admin dev",
+    "dev:api": "pnpm --filter @vault/api dev",
+    "seed:r2": "bash scripts/seed-r2-local.sh",
+    "seed:r2:prod": "bash scripts/seed-r2-prod.sh",
+    "build:web": "pnpm --filter @vault/web build",
+    "build:admin": "pnpm --filter @vault/admin build",
+    "build:api": "pnpm --filter @vault/api build",
+    "deploy:api": "pnpm --filter @vault/api deploy",
+    "deploy:web": "pnpm --filter @vault/web build && pnpm --filter @vault/web exec wrangler pages deploy dist --project-name=awall-web"
+  },
+  "engines": {
+    "node": ">=20 <23"
+  },
+  "packageManager": "pnpm@10.16.1"
+}

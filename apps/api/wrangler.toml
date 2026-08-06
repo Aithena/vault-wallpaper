@@ -1,0 +1,27 @@
+name = "vault-wallpaper-api"
+main = "src/index.ts"
+compatibility_date = "2025-02-24"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+routes = [
+  { pattern = "api.awall.cc", custom_domain = true }
+]
+
+[[kv_namespaces]]
+binding = "KV"
+id = "3ff6aac757d44bd0baf041b1cba43d38"
+preview_id = "3ff6aac757d44bd0baf041b1cba43d38"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "awall-wallpaper"
+preview_bucket_name = "vault-wallpaper-preview"
+
+[vars]
+APP_NAME = "awall"
+PUBLIC_ORIGIN = "https://awall.cc"
+
+# Secrets via `wrangler secret put` or .dev.vars:
+# JWT_SECRET, RESEND_API_KEY, EMAIL_FROM,
+# XUNHUPAY_APPID, XUNHUPAY_APPSECRET, XUNHUPAY_GATEWAY
