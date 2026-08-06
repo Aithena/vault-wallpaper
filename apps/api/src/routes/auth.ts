@@ -11,7 +11,7 @@ import {
   verifyEmailCode,
 } from '../lib/email-code'
 import { signSession } from '../lib/session'
-import { findOrCreateUserByEmail } from '../lib/users'
+import { findOrCreateUserByEmail, toSessionUser } from '../lib/users'
 
 export const authRoutes = new Hono<AppEnv>()
 
@@ -87,11 +87,6 @@ authRoutes.post('/verify', async (c) => {
   return c.json({
     ok: true,
     token,
-    user: {
-      id: user.id,
-      email: user.email,
-      memberTier: user.memberTier,
-      memberStatus: user.memberStatus,
-    },
+    user: toSessionUser(user),
   })
 })

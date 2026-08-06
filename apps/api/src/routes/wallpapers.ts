@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { AppEnv } from '../types'
 import { canAccessTier, SEED_WALLPAPERS } from '../lib/catalog'
 import { readBearer, verifySession } from '../lib/session'
-import { getUser } from '../lib/users'
+import { getUser, isUserMembershipActive } from '../lib/users'
 
 export const wallpaperRoutes = new Hono<AppEnv>()
 
@@ -27,7 +27,7 @@ wallpaperRoutes.get('/:id/download', async (c) => {
   if (!session) return c.json({ error: 'unauthorized' }, 401)
 
   const user = await getUser(c.env.KV, session.sub)
-  if (!user || user.memberStatus !== 'active') {
+  if (!user || !isUserMembershipActive(user)) {
     return c.json({ error: 'membership_required' }, 403)
   }
   if (!canAccessTier(user.memberTier, item.tierRequired)) {

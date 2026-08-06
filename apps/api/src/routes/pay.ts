@@ -95,7 +95,7 @@ payRoutes.post('/create', async (c) => {
     appid,
     trade_order_id: orderId,
     total_fee: totalFee,
-    title: `${MEMBERSHIP_TIERS[tier].label}终身会员`,
+    title: `${MEMBERSHIP_TIERS[tier].label}会员（一年）`,
     time,
     notify_url: notifyUrl,
     return_url: returnUrl,

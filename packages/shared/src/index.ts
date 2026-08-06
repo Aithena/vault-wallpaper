@@ -8,6 +8,9 @@ export const MEMBERSHIP_TIERS = {
 
 export type MembershipTierId = keyof typeof MEMBERSHIP_TIERS
 
+/** Each purchase / renew adds this many days. */
+export const MEMBERSHIP_DAYS = 365
+
 export const ORDER_STATUS = {
   pending: 'pending',
   paid: 'paid',
@@ -38,4 +41,15 @@ export type SessionUser = {
   email: string
   memberTier: MembershipTierId | null
   memberStatus: MemberStatus | null
+  /** ISO expiry time; membership valid only before this instant. */
+  memberExpiresAt: string | null
+}
+
+export function isMembershipValid(user: {
+  memberStatus: MemberStatus | null
+  memberExpiresAt: string | null
+}): boolean {
+  if (user.memberStatus !== 'active' || !user.memberExpiresAt) return false
+  const exp = Date.parse(user.memberExpiresAt)
+  return Number.isFinite(exp) && exp > Date.now()
 }

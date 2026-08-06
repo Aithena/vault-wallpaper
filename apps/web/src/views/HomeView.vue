@@ -1,8 +1,8 @@
 <template>
   <section class="hero">
-    <h1>精选壁纸，一次买断</h1>
+    <h1>精选壁纸，按年订阅</h1>
     <p>
-      列表只展示预览图。原图需登录并开通终身会员后，通过鉴权接口下载，不直接暴露存储地址。
+      列表只展示预览图。原图需登录并开通有效会员后，通过鉴权接口下载，不直接暴露存储地址。
     </p>
   </section>
 
@@ -28,7 +28,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { MEMBERSHIP_TIERS, type WallpaperPublic } from '@vault/shared'
+import { MEMBERSHIP_TIERS, isMembershipValid, type WallpaperPublic } from '@vault/shared'
 import { api, apiUrl, getToken } from '../lib/api'
 import { authState } from '../lib/auth'
 
@@ -58,7 +58,7 @@ async function onDownload(item: WallpaperPublic) {
     await router.push('/login')
     return
   }
-  if (!authState.user?.memberStatus || authState.user.memberStatus !== 'active') {
+  if (!authState.user || !isMembershipValid(authState.user)) {
     await router.push('/pricing')
     return
   }

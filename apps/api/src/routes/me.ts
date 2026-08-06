@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types'
 import { readBearer, verifySession } from '../lib/session'
-import { getUser } from '../lib/users'
+import { getUser, toSessionUser } from '../lib/users'
 
 export const meRoutes = new Hono<AppEnv>()
 
@@ -16,12 +16,5 @@ meRoutes.get('/', async (c) => {
   const user = await getUser(c.env.KV, session.sub)
   if (!user) return c.json({ user: null })
 
-  return c.json({
-    user: {
-      id: user.id,
-      email: user.email,
-      memberTier: user.memberTier,
-      memberStatus: user.memberStatus,
-    },
-  })
+  return c.json({ user: toSessionUser(user) })
 })
