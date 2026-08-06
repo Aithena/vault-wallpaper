@@ -7,6 +7,7 @@ import {
 } from '../lib/catalog'
 import { readBearer, verifySession } from '../lib/session'
 import { activateMembership } from '../lib/users'
+import { generateOrderId } from '../lib/order-id'
 import { xunhuHash } from '../lib/xunhupay'
 
 type OrderRecord = {
@@ -36,7 +37,7 @@ payRoutes.post('/create', async (c) => {
     return c.json({ error: 'invalid_tier' }, 400)
   }
 
-  const orderId = `ord_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`
+  const orderId = generateOrderId()
   const totalFee = resolveTierPrice(tier)
   const order: OrderRecord = {
     id: orderId,

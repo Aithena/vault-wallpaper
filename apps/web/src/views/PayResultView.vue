@@ -1,15 +1,14 @@
 <template>
   <section class="panel">
-    <h1>开通结果</h1>
-    <p class="hint">订单号：{{ orderId || '—' }}</p>
+    <h1>{{ headline }}</h1>
     <p v-if="loading">正在查询订单状态…</p>
     <template v-else-if="order">
-      <p class="msg">
-        状态：{{ order.status }} · 档位：{{ order.tier }} ·
-        {{ order.totalFee === '0.00' ? '免费' : `¥${order.totalFee}` }}
-      </p>
+      <p class="hint">订单号：{{ order.id }}</p>
+      <p class="msg">{{ statusLine }}</p>
+      <p class="hint">会员档位：{{ tierLabel }}</p>
+      <p v-if="amountLine" class="hint">{{ amountLine }}</p>
       <p v-if="authState.user?.memberExpiresAt" class="hint">
-        会员有效期至：{{ formatExpire(authState.user.memberExpiresAt) }}
+        有效期至：{{ formatExpire(authState.user.memberExpiresAt) }}
       </p>
     </template>
     <p v-else-if="error" class="err">{{ error }}</p>
@@ -21,8 +20,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { MEMBERSHIP_TIERS, type MembershipTierId } from '@vault/shared'
 import { api } from '../lib/api'
 import { authState, refreshMe } from '../lib/auth'
 
@@ -36,6 +36,40 @@ const order = ref<{
   tier: string
   totalFee: string
 } | null>(null)
+
+const isFree = computed(
+  () => order.value?.totalFee === '0.00' || order.value?.totalFee === '0' || order.value?.tier === 'free',
+)
+
+const headline = computed(() => {
+  if (!order.value) return '开通结果'
+  if (order.value.status !== 'paid') return '开通结果'
+  return isFree.value ? '开通成功' : '支付成功'
+})
+
+const statusLine = computed(() => {
+  if (!order.value) return ''
+  if (order.value.status === 'paid') {
+    return isFree.value ? '状态：已开通' : '状态：支付成功'
+  }
+  if (order.value.status === 'pending') return '状态：待支付'
+  if (order.value.status === 'refunded') return '状态：已退款'
+  return `状态：${order.value.status}`
+})
+
+const tierLabel = computed(() => {
+  const tier = order.value?.tier
+  if (!tier) return '—'
+  if (tier in MEMBERSHIP_TIERS) {
+    return MEMBERSHIP_TIERS[tier as MembershipTierId].label
+  }
+  return tier
+})
+
+const amountLine = computed(() => {
+  if (!order.value || isFree.value) return ''
+  return `支付金额：¥${order.value.totalFee}`
+})
 
 function formatExpire(iso: string) {
   try {
@@ -57,7 +91,7 @@ onMounted(async () => {
   await refreshMe()
   if (!orderId) {
     loading.value = false
-    error.value = '缺少 orderId'
+    error.value = '缺少订单号'
     return
   }
   try {
