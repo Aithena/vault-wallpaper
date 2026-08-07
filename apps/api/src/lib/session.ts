@@ -33,6 +33,9 @@ export type SessionPayload = {
   sub: string
   email: string
   exp: number
+  /** Absent or `user` = C 端；`admin` = 管理后台 */
+  role?: 'user' | 'admin'
+  username?: string
 }
 
 export async function signSession(

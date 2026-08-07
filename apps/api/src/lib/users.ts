@@ -12,6 +12,9 @@ export type UserRecord = {
   memberStatus: MemberStatus | null
   memberSince: string | null
   memberExpiresAt: string | null
+  /** C 端账号：active | disabled */
+  accountStatus?: 'active' | 'disabled'
+  blacklisted?: boolean
 }
 
 function userKey(id: string) {
@@ -20,6 +23,13 @@ function userKey(id: string) {
 
 function emailKey(email: string) {
   return `user_email:${email.toLowerCase()}`
+}
+
+function normalizeUser(user: UserRecord): UserRecord {
+  if (user.memberExpiresAt === undefined) user.memberExpiresAt = null
+  if (!user.accountStatus) user.accountStatus = 'active'
+  if (user.blacklisted === undefined) user.blacklisted = false
+  return user
 }
 
 export async function findOrCreateUserByEmail(
@@ -31,9 +41,7 @@ export async function findOrCreateUserByEmail(
   if (existingId) {
     const raw = await kv.get(userKey(existingId))
     if (raw) {
-      const user = JSON.parse(raw) as UserRecord
-      if (user.memberExpiresAt === undefined) user.memberExpiresAt = null
-      return user
+      return normalizeUser(JSON.parse(raw) as UserRecord)
     }
   }
 
@@ -46,6 +54,8 @@ export async function findOrCreateUserByEmail(
     memberStatus: null,
     memberSince: null,
     memberExpiresAt: null,
+    accountStatus: 'active',
+    blacklisted: false,
   }
   await kv.put(userKey(id), JSON.stringify(user))
   await kv.put(emailKey(normalized), id)
@@ -58,8 +68,7 @@ export async function getUser(
 ): Promise<UserRecord | null> {
   const raw = await kv.get(userKey(id))
   if (!raw) return null
-  const user = JSON.parse(raw) as UserRecord
-  if (user.memberExpiresAt === undefined) user.memberExpiresAt = null
+  const user = normalizeUser(JSON.parse(raw) as UserRecord)
 
   // Migrate legacy lifetime members: grant 1 year from now once
   if (user.memberStatus === 'active' && !user.memberExpiresAt) {
@@ -72,7 +81,56 @@ export async function getUser(
   return user
 }
 
+export async function getUserByEmail(
+  kv: KVNamespace,
+  email: string,
+): Promise<UserRecord | null> {
+  const id = await kv.get(emailKey(email.toLowerCase()))
+  if (!id) return null
+  return getUser(kv, id)
+}
+
+export async function listUsers(kv: KVNamespace): Promise<UserRecord[]> {
+  const rows: UserRecord[] = []
+  let cursor: string | undefined
+  do {
+    const page = await kv.list({ prefix: 'user:', cursor, limit: 1000 })
+    for (const key of page.keys) {
+      // skip malformed; only user:{uuid}
+      if (!/^user:[0-9a-f-]{36}$/i.test(key.name)) continue
+      const raw = await kv.get(key.name)
+      if (raw) rows.push(normalizeUser(JSON.parse(raw) as UserRecord))
+    }
+    cursor = page.list_complete ? undefined : page.cursor
+  } while (cursor)
+  rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return rows
+}
+
+export async function updateUserAdmin(
+  kv: KVNamespace,
+  id: string,
+  patch: {
+    accountStatus?: 'active' | 'disabled'
+    blacklisted?: boolean
+    memberTier?: MembershipTierId | null
+    memberStatus?: MemberStatus | null
+    memberExpiresAt?: string | null
+  },
+): Promise<UserRecord | null> {
+  const user = await getUser(kv, id)
+  if (!user) return null
+  if (patch.accountStatus !== undefined) user.accountStatus = patch.accountStatus
+  if (patch.blacklisted !== undefined) user.blacklisted = patch.blacklisted
+  if (patch.memberTier !== undefined) user.memberTier = patch.memberTier
+  if (patch.memberStatus !== undefined) user.memberStatus = patch.memberStatus
+  if (patch.memberExpiresAt !== undefined) user.memberExpiresAt = patch.memberExpiresAt
+  await kv.put(userKey(id), JSON.stringify(user))
+  return user
+}
+
 export function isUserMembershipActive(user: UserRecord): boolean {
+  if (user.accountStatus === 'disabled') return false
   if (user.memberStatus !== 'active' || !user.memberExpiresAt) return false
   const exp = Date.parse(user.memberExpiresAt)
   return Number.isFinite(exp) && exp > Date.now()

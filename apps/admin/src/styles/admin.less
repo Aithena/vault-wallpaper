@@ -1,0 +1,96 @@
+:root {
+  --admin-bg-1: #dfe8f4;
+  --admin-bg-2: #eef2f7;
+  --admin-bg-3: #f5efe8;
+  --admin-text: #1b2430;
+  --admin-muted: #6b7785;
+  --admin-line: rgba(27, 36, 48, 0.08);
+  --admin-accent: #2563eb;
+  --admin-accent-soft: rgba(37, 99, 235, 0.12);
+  --admin-c-width: 76px;
+  --admin-e-width: 208px;
+  --admin-a-height: 56px;
+  --admin-font: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --el-color-primary: #2563eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--admin-font);
+  color: var(--admin-text);
+  background: linear-gradient(
+    135deg,
+    var(--admin-bg-1) 0%,
+    var(--admin-bg-2) 48%,
+    var(--admin-bg-3) 100%
+  );
+  background-attachment: fixed;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.page-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.page-toolbar h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.page-toolbar .sub {
+  margin: 6px 0 0;
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+.page-toolbar .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.thumb {
+  width: 56px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #e8eef5;
+  display: block;
+}
+
+.muted {
+  color: var(--admin-muted);
+}

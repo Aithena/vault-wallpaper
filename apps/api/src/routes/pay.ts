@@ -3,22 +3,14 @@ import { MEMBERSHIP_TIERS, ORDER_STATUS } from '@vault/shared'
 import type { AppEnv } from '../types'
 import {
   isMembershipTierId,
-  resolveTierPrice,
 } from '../lib/catalog'
+import { resolveConfiguredTierPrice } from '../lib/tiers-config'
+import { getSiteConfig } from '../lib/site-config'
 import { readBearer, verifySession } from '../lib/session'
-import { activateMembership } from '../lib/users'
+import { activateMembership, getUser } from '../lib/users'
 import { generateOrderId } from '../lib/order-id'
 import { xunhuHash } from '../lib/xunhupay'
-
-type OrderRecord = {
-  id: string
-  userId: string
-  tier: string
-  totalFee: string
-  status: string
-  createdAt: string
-  paidAt?: string
-}
+import type { OrderRecord } from '../lib/orders'
 
 export const payRoutes = new Hono<AppEnv>()
 
@@ -31,20 +23,34 @@ payRoutes.post('/create', async (c) => {
   const session = await verifySession(c.env.JWT_SECRET, token)
   if (!session) return c.json({ error: 'unauthorized' }, 401)
 
+  const payer = await getUser(c.env.KV, session.sub)
+  if (!payer || payer.accountStatus === 'disabled') {
+    return c.json({ error: 'unauthorized' }, 401)
+  }
+  if (payer.blacklisted) {
+    return c.json({ error: 'blacklisted' }, 403)
+  }
+
   const body = await c.req.json<{ tier?: string }>().catch(() => ({}))
   const tier = body.tier
   if (!tier || !isMembershipTierId(tier)) {
     return c.json({ error: 'invalid_tier' }, 400)
   }
 
+  const site = await getSiteConfig(c.env.KV)
+  if (!site.purchaseEnabled && tier !== 'free') {
+    return c.json({ error: 'purchase_disabled' }, 403)
+  }
+
   const orderId = generateOrderId()
-  const totalFee = resolveTierPrice(tier)
+  const totalFee = await resolveConfiguredTierPrice(c.env.KV, tier)
   const order: OrderRecord = {
     id: orderId,
     userId: session.sub,
     tier,
     totalFee,
     status: ORDER_STATUS.pending,
+    type: 'paid',
     createdAt: new Date().toISOString(),
   }
   await c.env.KV.put(`order:${orderId}`, JSON.stringify(order), {
@@ -54,6 +60,7 @@ payRoutes.post('/create', async (c) => {
   // Free tier: activate immediately, no payment
   if (tier === 'free' || totalFee === '0.00' || totalFee === '0') {
     order.status = ORDER_STATUS.paid
+    order.type = 'free'
     order.paidAt = new Date().toISOString()
     await c.env.KV.put(`order:${orderId}`, JSON.stringify(order), {
       expirationTtl: 60 * 60 * 24 * 7,
@@ -75,6 +82,10 @@ payRoutes.post('/create', async (c) => {
   const gateway = c.env.XUNHUPAY_GATEWAY || 'https://api.xunhupay.com'
 
   if (!appid || !secret) {
+    order.type = 'mock'
+    await c.env.KV.put(`order:${orderId}`, JSON.stringify(order), {
+      expirationTtl: 60 * 60 * 24 * 7,
+    })
     return c.json({
       ok: true,
       mode: 'mock',
@@ -199,8 +210,15 @@ payRoutes.post('/notify', async (c) => {
     if (!isMembershipTierId(order.tier)) return c.text('fail', 400)
     order.status = ORDER_STATUS.paid
     order.paidAt = new Date().toISOString()
+    order.callbackAt = new Date().toISOString()
+    order.callbackPayload = params
     await c.env.KV.put(`order:${orderId}`, JSON.stringify(order))
     await activateMembership(c.env.KV, order.userId, order.tier)
+  } else {
+    // Keep last notify for debugging even if not paid yet
+    order.callbackAt = new Date().toISOString()
+    order.callbackPayload = params
+    await c.env.KV.put(`order:${orderId}`, JSON.stringify(order))
   }
 
   return c.text('success')

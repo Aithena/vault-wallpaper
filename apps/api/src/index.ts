@@ -5,6 +5,7 @@ import { authRoutes } from './routes/auth'
 import { wallpaperRoutes } from './routes/wallpapers'
 import { payRoutes } from './routes/pay'
 import { meRoutes } from './routes/me'
+import { adminRoutes } from './routes/admin'
 
 const app = new Hono<AppEnv>()
 
@@ -33,6 +34,7 @@ app.route('/api/auth', authRoutes)
 app.route('/api/me', meRoutes)
 app.route('/api/wallpapers', wallpaperRoutes)
 app.route('/api/pay', payRoutes)
+app.route('/api/admin', adminRoutes)
 
 app.notFound((c) => c.json({ error: 'not_found' }, 404))
 

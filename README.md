@@ -11,6 +11,8 @@ apps/api     Cloudflare Workers + Hono
 packages/shared  共享类型与价目表
 ```
 
+管理后台菜单与需求基线见 [`docs/admin-ia.md`](docs/admin-ia.md)。
+
 ## 环境
 
 - Node.js 20（当前 API 使用 wrangler@3，兼容 Node 20；若升到 wrangler@4 需 Node ≥ 22）

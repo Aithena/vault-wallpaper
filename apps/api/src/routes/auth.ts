@@ -12,6 +12,7 @@ import {
 } from '../lib/email-code'
 import { signSession } from '../lib/session'
 import { findOrCreateUserByEmail, toSessionUser } from '../lib/users'
+import { writeUserLog } from '../lib/user-logs'
 
 export const authRoutes = new Hono<AppEnv>()
 
@@ -79,6 +80,23 @@ authRoutes.post('/verify', async (c) => {
   }
 
   const user = await findOrCreateUserByEmail(c.env.KV, email)
+  if (user.accountStatus === 'disabled') {
+    return c.json({ error: 'account_disabled' }, 403)
+  }
+
+  const ip =
+    c.req.header('cf-connecting-ip') ||
+    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+    undefined
+  await writeUserLog(c.env.KV, {
+    userId: user.id,
+    action: 'user.login',
+    detail: ip ? `ip=${ip}` : undefined,
+    actorType: 'user',
+    actorId: user.id,
+    actorName: user.email,
+  })
+
   const token = await signSession(c.env.JWT_SECRET, {
     sub: user.id,
     email: user.email,
