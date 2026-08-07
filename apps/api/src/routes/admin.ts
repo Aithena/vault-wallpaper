@@ -12,6 +12,7 @@ import { adminAuditRoutes } from './admin-audit'
 import { adminDownloadsRoutes } from './admin-downloads'
 import { adminDashboardRoutes } from './admin-dashboard'
 import { adminAiRoutes } from './admin-ai'
+import { adminVisitorsRoutes } from './admin-visitors'
 
 export const adminRoutes = new Hono<AppEnv>()
 
@@ -27,3 +28,4 @@ adminRoutes.route('/audit', adminAuditRoutes)
 adminRoutes.route('/downloads', adminDownloadsRoutes)
 adminRoutes.route('/dashboard', adminDashboardRoutes)
 adminRoutes.route('/ai', adminAiRoutes)
+adminRoutes.route('/visitors', adminVisitorsRoutes)

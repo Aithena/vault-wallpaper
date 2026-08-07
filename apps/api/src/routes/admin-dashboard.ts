@@ -4,6 +4,7 @@ import { requireAdmin } from '../lib/admin-auth'
 import { requireAnyMenu, requireMenu, actorPerms } from '../lib/admin-perm'
 import { listAudits } from '../lib/audit'
 import { listAiUsage, summarizeAiUsage } from '../lib/ai-usage'
+import { getVisitorDayStats } from '../lib/visitors'
 import { listDownloads } from '../lib/downloads'
 import { listOrders } from '../lib/orders'
 import { isUserMembershipActive, listUsers } from '../lib/users'
@@ -93,14 +94,16 @@ adminDashboardRoutes.get('/overview', async (c) => {
   if (denied) return denied
 
   await ensureSeedCatalog(c.env.KV)
-  const [users, orders, wallpapers, downloads, audits, aiUsage] = await Promise.all([
-    listUsers(c.env.KV),
-    listOrders(c.env.KV),
-    listWallpapers(c.env.KV),
-    listDownloads(c.env.KV, 1000),
-    listAudits(c.env.KV, 8),
-    listAiUsage(c.env.KV, 2000),
-  ])
+  const [users, orders, wallpapers, downloads, audits, aiUsage, visitorTrend] =
+    await Promise.all([
+      listUsers(c.env.KV),
+      listOrders(c.env.KV),
+      listWallpapers(c.env.KV),
+      listDownloads(c.env.KV, 1000),
+      listAudits(c.env.KV, 8),
+      listAiUsage(c.env.KV, 2000),
+      getVisitorDayStats(c.env.KV, 1),
+    ])
 
   const today = todayKey()
   const paidMembers = users.filter(
@@ -121,6 +124,10 @@ adminDashboardRoutes.get('/overview', async (c) => {
 
   const downloadsToday = downloads.filter((d) => dayKey(d.createdAt) === today)
   const aiSummary = summarizeAiUsage(aiUsage, today)
+  const visitorToday = visitorTrend.find((d) => d.date === today) || {
+    uv: 0,
+    pv: 0,
+  }
 
   return c.json({
     overview: {
@@ -145,6 +152,8 @@ adminDashboardRoutes.get('/overview', async (c) => {
       aiSuccessToday: aiSummary.todaySuccess,
       aiFailedToday: aiSummary.todayFailed,
       aiAvgDurationMs: aiSummary.avgDurationMs,
+      visitorsUvToday: visitorToday.uv,
+      visitorsPvToday: visitorToday.pv,
     },
     recentAudits: audits.map((a) => ({
       id: a.id,

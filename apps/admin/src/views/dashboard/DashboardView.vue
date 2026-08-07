@@ -28,6 +28,7 @@
         <el-button @click="$router.push('/orders')">全部订单</el-button>
         <el-button @click="$router.push('/downloads')">下载记录</el-button>
         <el-button @click="$router.push('/tools/ai-usage')">AI 使用统计</el-button>
+        <el-button @click="$router.push('/tools/visitors')">访客统计</el-button>
         <el-button @click="$router.push('/tools/audit')">操作日志</el-button>
       </el-space>
 
@@ -72,6 +73,8 @@ type Overview = {
   aiSuccessToday: number
   aiFailedToday: number
   aiAvgDurationMs: number
+  visitorsUvToday: number
+  visitorsPvToday: number
 }
 
 type AuditRow = {
@@ -131,6 +134,12 @@ const cards = computed(() => {
       value: String(o.aiToday),
       hint: `成功 ${o.aiSuccessToday} · 失败 ${o.aiFailedToday} · 累计 ${o.aiTotal}`,
       to: '/tools/ai-usage',
+    },
+    {
+      label: '今日访客',
+      value: `${o.visitorsUvToday} UV`,
+      hint: `PV ${o.visitorsPvToday}`,
+      to: '/tools/visitors',
     },
   ]
 })

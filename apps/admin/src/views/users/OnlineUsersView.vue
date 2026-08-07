@@ -3,18 +3,18 @@
     <el-card shadow="never" v-loading="loading">
       <div class="page-toolbar">
         <div>
-          <h1>在线会员</h1>
+          <h1>在线用户</h1>
           <p class="sub">
-            近似在线：最近 {{ windowMinutes }} 分钟内有心跳或浏览活动的账号（默认只看有效会员）。
+            注册登录即为会员。近似在线：最近 {{ windowMinutes }} 分钟内有心跳或浏览活动。可按权益状态筛选。
           </p>
         </div>
         <div class="actions">
-          <el-switch
-            v-model="membersOnly"
-            active-text="仅会员"
-            inactive-text="全部登录用户"
-            @change="load"
-          />
+          <el-select v-model="benefit" style="width: 140px" @change="load">
+            <el-option label="全部权益" value="all" />
+            <el-option label="未购买" value="never_purchased" />
+            <el-option label="权益有效" value="active" />
+            <el-option label="权益已过期" value="expired" />
+          </el-select>
           <el-button @click="load">刷新</el-button>
         </div>
       </div>
@@ -32,10 +32,10 @@
         <el-table-column label="档位" width="100">
           <template #default="{ row }">{{ row.memberTier ?? '—' }}</template>
         </el-table-column>
-        <el-table-column label="会员有效" width="100">
+        <el-table-column label="权益状态" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.membershipActive ? 'success' : 'info'" size="small">
-              {{ row.membershipActive ? '是' : '否' }}
+            <el-tag :type="benefitTagType(row.benefitStatus)" size="small">
+              {{ benefitLabel(row.benefitStatus) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -47,7 +47,11 @@
         </el-table-column>
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
-            <el-button link type="primary" @click="$router.push(`/users?q=${encodeURIComponent(row.email)}`)">
+            <el-button
+              link
+              type="primary"
+              @click="$router.push(`/users?q=${encodeURIComponent(row.email)}`)"
+            >
               用户
             </el-button>
           </template>
@@ -64,17 +68,19 @@ import { ElMessage } from 'element-plus'
 import { adminApi, ApiError } from '../../lib/api'
 import { buildQuery } from '../../lib/query'
 
+type BenefitStatus = 'never_purchased' | 'active' | 'expired'
+
 type OnlineRow = {
   userId: string
   email: string
   memberTier: string | null
-  membershipActive: boolean
+  benefitStatus: BenefitStatus
   path?: string
   lastSeenAt: string
 }
 
 const loading = ref(false)
-const membersOnly = ref(true)
+const benefit = ref<'all' | BenefitStatus>('all')
 const rows = ref<OnlineRow[]>([])
 const windowMs = ref(10 * 60 * 1000)
 let timer: ReturnType<typeof setInterval> | null = null
@@ -85,10 +91,26 @@ function formatTime(v: string) {
   return v.replace('T', ' ').slice(0, 19)
 }
 
+function benefitLabel(s?: BenefitStatus) {
+  return (
+    {
+      never_purchased: '未购买',
+      active: '权益有效',
+      expired: '已过期',
+    }[s || 'never_purchased'] ?? '未购买'
+  )
+}
+
+function benefitTagType(s?: BenefitStatus): 'info' | 'success' | 'warning' {
+  if (s === 'active') return 'success'
+  if (s === 'expired') return 'warning'
+  return 'info'
+}
+
 async function load() {
   loading.value = true
   try {
-    const qs = buildQuery({ membersOnly: membersOnly.value ? '1' : '0' })
+    const qs = buildQuery({ benefit: benefit.value })
     const data = await adminApi<{
       online: OnlineRow[]
       total: number

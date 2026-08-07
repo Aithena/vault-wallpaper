@@ -47,6 +47,7 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authState, logout, refreshMe } from './lib/auth'
 import { trackPage } from './lib/presence'
+import { trackVisitorPageview } from './lib/visitor-analytics'
 import { loadSitePublic, siteState } from './lib/site'
 
 const router = useRouter()
@@ -57,7 +58,6 @@ onMounted(() => {
 })
 
 router.afterEach((to) => {
-  if (!authState.user) return
   const label =
     to.name === 'home'
       ? '壁纸列表'
@@ -68,7 +68,10 @@ router.afterEach((to) => {
           : to.name === 'login'
             ? '登录页'
             : String(to.name || to.path)
-  void trackPage(to.fullPath, label)
+  void trackVisitorPageview(to.fullPath, label)
+  if (authState.user) {
+    void trackPage(to.fullPath, label)
+  }
 })
 
 async function onLogout() {

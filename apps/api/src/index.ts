@@ -7,6 +7,7 @@ import { payRoutes } from './routes/pay'
 import { meRoutes } from './routes/me'
 import { adminRoutes } from './routes/admin'
 import { siteRoutes } from './routes/site'
+import { analyticsRoutes } from './routes/analytics'
 
 const app = new Hono<AppEnv>()
 
@@ -34,6 +35,7 @@ app.get('/api/health', (c) =>
 app.route('/api/auth', authRoutes)
 app.route('/api/me', meRoutes)
 app.route('/api/site', siteRoutes)
+app.route('/api/analytics', analyticsRoutes)
 app.route('/api/wallpapers', wallpaperRoutes)
 app.route('/api/pay', payRoutes)
 app.route('/api/admin', adminRoutes)

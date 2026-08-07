@@ -39,8 +39,14 @@ function publicUser(u: NonNullable<Awaited<ReturnType<typeof getUser>>>) {
 adminUsersRoutes.get('/online', async (c) => {
   const denied = await requireMenu(c, 'users.online')
   if (denied) return denied
-  const membersOnly = c.req.query('membersOnly') !== '0'
-  const online = await listOnlinePresence(c.env.KV, { membersOnly })
+  const benefitRaw = c.req.query('benefit')?.trim() || 'all'
+  const benefit =
+    benefitRaw === 'never_purchased' ||
+    benefitRaw === 'active' ||
+    benefitRaw === 'expired'
+      ? benefitRaw
+      : 'all'
+  const online = await listOnlinePresence(c.env.KV, { benefit })
   return c.json({
     online,
     total: online.length,
