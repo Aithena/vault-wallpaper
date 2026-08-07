@@ -3,11 +3,13 @@ import type { AppEnv } from '../types'
 import { requireAdmin } from '../lib/admin-auth'
 import { requireButton, requireMenu } from '../lib/admin-perm'
 import { writeAudit } from '../lib/audit'
+import { assertOwned, filterOwned, getActorScope } from '../lib/admin-scope'
 import { getSiteConfig, saveSiteConfig } from '../lib/site-config'
 import { getTierConfigs, saveTierConfigs, type TierConfigItem } from '../lib/tiers-config'
 import {
   createAnnouncement,
   deleteAnnouncement,
+  getAnnouncement,
   listAnnouncements,
   updateAnnouncement,
 } from '../lib/announcements'
@@ -69,7 +71,13 @@ adminSettingsRoutes.put('/tiers', async (c) => {
 adminSettingsRoutes.get('/announcements', async (c) => {
   const denied = await requireMenu(c, 'settings.announcements')
   if (denied) return denied
-  return c.json({ announcements: await listAnnouncements(c.env.KV) })
+  const { admin, scope } = await getActorScope(c)
+  const announcements = filterOwned(
+    await listAnnouncements(c.env.KV),
+    scope,
+    admin.id,
+  )
+  return c.json({ announcements })
 })
 
 adminSettingsRoutes.post('/announcements', async (c) => {
@@ -100,6 +108,12 @@ adminSettingsRoutes.post('/announcements', async (c) => {
 adminSettingsRoutes.patch('/announcements/:id', async (c) => {
   const denied = await requireButton(c, 'settings.announcements.edit')
   if (denied) return denied
+  const { admin, scope } = await getActorScope(c)
+  const existing = await getAnnouncement(c.env.KV, c.req.param('id'))
+  if (!existing) return c.json({ error: 'not_found' }, 404)
+  if (!assertOwned(scope, admin.id, existing.createdByAdminId)) {
+    return c.json({ error: 'forbidden_scope' }, 403)
+  }
   const body = (await c.req.json().catch(() => ({}))) as {
     title?: string
     content?: string
@@ -107,7 +121,6 @@ adminSettingsRoutes.patch('/announcements/:id', async (c) => {
   }
   const announcement = await updateAnnouncement(c.env.KV, c.req.param('id'), body)
   if (!announcement) return c.json({ error: 'not_found' }, 404)
-  const admin = c.get('admin')!
   await writeAudit(c.env.KV, {
     adminId: admin.id,
     adminUsername: admin.username,
@@ -120,9 +133,14 @@ adminSettingsRoutes.patch('/announcements/:id', async (c) => {
 adminSettingsRoutes.delete('/announcements/:id', async (c) => {
   const denied = await requireButton(c, 'settings.announcements.delete')
   if (denied) return denied
+  const { admin, scope } = await getActorScope(c)
+  const existing = await getAnnouncement(c.env.KV, c.req.param('id'))
+  if (!existing) return c.json({ error: 'not_found' }, 404)
+  if (!assertOwned(scope, admin.id, existing.createdByAdminId)) {
+    return c.json({ error: 'forbidden_scope' }, 403)
+  }
   const ok = await deleteAnnouncement(c.env.KV, c.req.param('id'))
   if (!ok) return c.json({ error: 'not_found' }, 404)
-  const admin = c.get('admin')!
   await writeAudit(c.env.KV, {
     adminId: admin.id,
     adminUsername: admin.username,

@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types'
 import { requireAdmin } from '../lib/admin-auth'
-import { requireMenu } from '../lib/admin-perm'
+import { requireAnyMenu, requireMenu } from '../lib/admin-perm'
 import { listAudits } from '../lib/audit'
 import { listDownloads } from '../lib/downloads'
 import { listOrders } from '../lib/orders'
@@ -21,6 +21,70 @@ function dayKey(iso: string) {
 function todayKey() {
   return new Date().toISOString().slice(0, 10)
 }
+
+function orderType(o: { type?: string; totalFee: string }) {
+  return o.type ?? (o.totalFee === '0.00' || o.totalFee === '0' ? 'free' : 'paid')
+}
+
+function countsRevenue(type: string) {
+  return type === 'paid' || type === 'mock'
+}
+
+adminDashboardRoutes.get('/finance', async (c) => {
+  const denied = await requireAnyMenu(c, ['orders.finance', 'dashboard.overview'])
+  if (denied) return denied
+
+  const orders = await listOrders(c.env.KV)
+  const paid = orders.filter((o) => o.status === 'paid')
+
+  const summary = {
+    paidCount: paid.length,
+    revenue: paid
+      .filter((o) => countsRevenue(orderType(o)))
+      .reduce((sum, o) => sum + Number(o.totalFee || 0), 0)
+      .toFixed(2),
+    freeCount: paid.filter((o) => orderType(o) === 'free').length,
+    adminGrantCount: paid.filter((o) => orderType(o) === 'admin_grant').length,
+  }
+
+  const today = new Date()
+  const dayKeys: string[] = []
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today)
+    d.setUTCDate(d.getUTCDate() - i)
+    dayKeys.push(d.toISOString().slice(0, 10))
+  }
+
+  const trend = dayKeys.map((date) => {
+    const dayPaid = paid.filter((o) => (o.paidAt || o.createdAt).slice(0, 10) === date)
+    const dayRevenue = dayPaid.filter((o) => countsRevenue(orderType(o)))
+    return {
+      date,
+      revenue: dayRevenue.reduce((sum, o) => sum + Number(o.totalFee || 0), 0).toFixed(2),
+      paidCount: dayPaid.length,
+    }
+  })
+
+  const tierMap = new Map<string, { count: number; revenue: number }>()
+  for (const o of paid) {
+    const tier = o.tier || 'unknown'
+    const entry = tierMap.get(tier) ?? { count: 0, revenue: 0 }
+    entry.count += 1
+    if (countsRevenue(orderType(o))) {
+      entry.revenue += Number(o.totalFee || 0)
+    }
+    tierMap.set(tier, entry)
+  }
+  const byTier = [...tierMap.entries()]
+    .map(([tier, v]) => ({
+      tier,
+      count: v.count,
+      revenue: v.revenue.toFixed(2),
+    }))
+    .sort((a, b) => b.count - a.count)
+
+  return c.json({ summary, trend, byTier })
+})
 
 adminDashboardRoutes.get('/overview', async (c) => {
   const denied = await requireMenu(c, 'dashboard.overview')

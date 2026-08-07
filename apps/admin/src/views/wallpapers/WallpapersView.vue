@@ -14,22 +14,45 @@
           >
             单张上传
           </el-button>
+          <el-button
+            v-if="hasButton('wallpapers.list.upload')"
+            @click="$router.push('/wallpapers/batch')"
+          >
+            批量上传
+          </el-button>
         </div>
       </div>
 
       <div class="filter-row" style="margin-bottom: 14px">
-        <el-select v-model="filters.status" placeholder="状态" style="width: 130px">
+        <el-select
+          v-model="filters.status"
+          placeholder="状态"
+          style="width: 130px"
+          @change="onFilterChange"
+        >
           <el-option label="全部" value="all" />
           <el-option label="待审核" value="pending" />
           <el-option label="已驳回" value="rejected" />
           <el-option label="已上架" value="published" />
           <el-option label="已下架" value="unpublished" />
         </el-select>
-        <el-select v-model="filters.category" placeholder="分类" style="width: 130px">
+        <el-select
+          v-model="filters.category"
+          placeholder="分类"
+          style="width: 130px"
+          @change="onFilterChange"
+        >
           <el-option label="全部" value="all" />
           <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.name" />
         </el-select>
-        <el-input v-model="filters.q" clearable placeholder="搜索标题" style="width: 200px" />
+        <el-input
+          v-model="filters.q"
+          clearable
+          placeholder="搜索标题"
+          style="width: 200px"
+          @change="onFilterChange"
+          @clear="onFilterChange"
+        />
       </div>
 
       <div v-if="selected.length" style="margin-bottom: 12px">
@@ -59,12 +82,19 @@
               >
                 批量删除
               </el-button>
+              <el-button
+                v-if="hasButton('wallpapers.list.batch')"
+                size="small"
+                @click="batchSetCategory"
+              >
+                批量改分类
+              </el-button>
             </el-space>
           </template>
         </el-alert>
       </div>
 
-      <el-table :data="filtered" stripe border @selection-change="onSelectionChange">
+      <el-table :data="rows" stripe border @selection-change="onSelectionChange">
         <el-table-column type="selection" width="48" />
         <el-table-column label="预览" width="80">
           <template #default="{ row }">
@@ -164,6 +194,17 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="table-pagination"
+        @size-change="onPageSizeChange"
+        @current-change="load"
+      />
     </el-card>
 
     <el-dialog v-model="reuploadVisible" title="补传原图" width="420px" destroy-on-close>
@@ -176,13 +217,24 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="categoryDialogVisible" title="批量改分类" width="420px" destroy-on-close>
+      <el-select v-model="categoryPick" clearable placeholder="选择分类（可清空）" style="width: 100%">
+        <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+      </el-select>
+      <template #footer>
+        <el-button @click="categoryDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmSetCategory">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminApi, adminUpload, ApiError } from '../../lib/api'
+import { buildQuery } from '../../lib/query'
 import { usePermission } from '../../lib/permission'
 
 type WallpaperRow = {
@@ -206,21 +258,15 @@ const loading = ref(false)
 const rows = ref<WallpaperRow[]>([])
 const categories = ref<CategoryRow[]>([])
 const selected = ref<WallpaperRow[]>([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const filters = reactive({ status: 'all', category: 'all', q: '' })
 
 const reuploadVisible = ref(false)
 const reuploadId = ref('')
 const reuploadFile = ref<File | null>(null)
 const reuploading = ref(false)
-
-const filtered = computed(() =>
-  rows.value.filter((r) => {
-    if (filters.status !== 'all' && r.status !== filters.status) return false
-    if (filters.category !== 'all' && r.category !== filters.category) return false
-    if (filters.q && !r.title.includes(filters.q.trim())) return false
-    return true
-  }),
-)
 
 function onSelectionChange(vals: WallpaperRow[]) {
   selected.value = vals
@@ -239,15 +285,45 @@ function statusType(s: string): 'warning' | 'danger' | 'success' | 'info' {
   return 'info'
 }
 
+function onFilterChange() {
+  page.value = 1
+  load()
+}
+
+function onPageSizeChange() {
+  page.value = 1
+  load()
+}
+
+async function loadTaxonomy() {
+  try {
+    const tax = await adminApi<{ categories: CategoryRow[] }>('/api/admin/wallpapers/taxonomy')
+    categories.value = tax.categories
+  } catch (e) {
+    ElMessage.error(e instanceof ApiError ? e.code : '加载分类失败')
+  }
+}
+
 async function load() {
   loading.value = true
   try {
-    const [wp, tax] = await Promise.all([
-      adminApi<{ wallpapers: WallpaperRow[] }>('/api/admin/wallpapers'),
-      adminApi<{ categories: CategoryRow[] }>('/api/admin/wallpapers/taxonomy'),
-    ])
-    rows.value = wp.wallpapers
-    categories.value = tax.categories
+    const qs = buildQuery({
+      page: page.value,
+      pageSize: pageSize.value,
+      q: filters.q.trim(),
+      status: filters.status,
+      category: filters.category,
+    })
+    const data = await adminApi<{
+      wallpapers: WallpaperRow[]
+      total: number
+      page: number
+      pageSize: number
+    }>(`/api/admin/wallpapers${qs}`)
+    rows.value = data.wallpapers
+    total.value = data.total
+    page.value = data.page
+    pageSize.value = data.pageSize
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.code : '加载失败')
   } finally {
@@ -336,6 +412,36 @@ async function batch(action: 'approve' | 'unpublish' | 'delete') {
   }
 }
 
+const categoryDialogVisible = ref(false)
+const categoryPick = ref<string | null>(null)
+
+function batchSetCategory() {
+  categoryPick.value = categories.value[0]?.id ?? null
+  categoryDialogVisible.value = true
+}
+
+async function confirmSetCategory() {
+  try {
+    const data = await adminApi<{ successCount: number; failCount: number }>(
+      '/api/admin/wallpapers/batch',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'set_category',
+          ids: selected.value.map((r) => r.id),
+          categoryId: categoryPick.value,
+        }),
+      },
+    )
+    ElMessage.success(`成功 ${data.successCount}，失败 ${data.failCount}`)
+    categoryDialogVisible.value = false
+    selected.value = []
+    await load()
+  } catch (e) {
+    ElMessage.error(e instanceof ApiError ? e.code : '批量改分类失败')
+  }
+}
+
 function openReupload(row: WallpaperRow) {
   reuploadId.value = row.id
   reuploadFile.value = null
@@ -365,7 +471,10 @@ async function submitReupload() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await loadTaxonomy()
+  await load()
+})
 </script>
 
 <style scoped>
@@ -375,5 +484,9 @@ onMounted(load)
   object-fit: cover;
   border-radius: 4px;
   display: block;
+}
+.table-pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 </style>

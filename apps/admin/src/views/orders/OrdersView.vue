@@ -18,13 +18,13 @@
       </div>
 
       <div class="filter-row" style="margin-bottom: 14px">
-        <el-select v-model="filters.status" style="width: 130px">
+        <el-select v-model="filters.status" style="width: 130px" @change="onFilterChange">
           <el-option label="全部状态" value="all" />
           <el-option label="pending" value="pending" />
           <el-option label="paid" value="paid" />
           <el-option label="refunded" value="refunded" />
         </el-select>
-        <el-select v-model="filters.type" style="width: 150px">
+        <el-select v-model="filters.type" style="width: 150px" @change="onFilterChange">
           <el-option label="全部类型" value="all" />
           <el-option label="paid" value="paid" />
           <el-option label="free" value="free" />
@@ -38,11 +38,19 @@
           start-placeholder="创建起"
           end-placeholder="创建止"
           value-format="YYYY-MM-DD"
+          @change="onFilterChange"
         />
-        <el-input v-model="filters.q" clearable placeholder="邮箱 / 订单号" style="width: 220px" />
+        <el-input
+          v-model="filters.q"
+          clearable
+          placeholder="邮箱 / 订单号"
+          style="width: 220px"
+          @change="onFilterChange"
+          @clear="onFilterChange"
+        />
       </div>
 
-      <el-table :data="filtered" stripe border>
+      <el-table :data="rows" stripe border>
         <el-table-column prop="id" label="订单号" min-width="140" />
         <el-table-column label="用户" min-width="160">
           <template #default="{ row }">{{ row.userEmail || row.userId }}</template>
@@ -91,6 +99,17 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="table-pagination"
+        @size-change="onPageSizeChange"
+        @current-change="load"
+      />
     </el-card>
 
     <el-dialog
@@ -171,10 +190,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminApi, adminDownload, ApiError } from '../../lib/api'
+import { buildQuery } from '../../lib/query'
 import { usePermission } from '../../lib/permission'
 
 type OrderRow = {
@@ -212,6 +232,9 @@ const route = useRoute()
 const loading = ref(false)
 const exporting = ref(false)
 const rows = ref<OrderRow[]>([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const dateRange = ref<[string, string] | null>(null)
 const filters = reactive({ status: 'all', type: 'all', q: '' })
 
@@ -219,27 +242,6 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detailOrder = ref<OrderDetail | null>(null)
 const detailUser = ref<UserBrief | null>(null)
-
-const filtered = computed(() =>
-  rows.value.filter((r) => {
-    if (filters.status !== 'all' && r.status !== filters.status) return false
-    if (filters.type !== 'all' && r.type !== filters.type) return false
-    const q = filters.q.trim().toLowerCase()
-    if (
-      q &&
-      !(r.userEmail || '').toLowerCase().includes(q) &&
-      !r.id.toLowerCase().includes(q)
-    ) {
-      return false
-    }
-    if (dateRange.value) {
-      const [from, to] = dateRange.value
-      const day = r.createdAt.slice(0, 10)
-      if (day < from || day > to) return false
-    }
-    return true
-  }),
-)
 
 function formatTime(v: string | null | undefined) {
   if (!v) return '—'
@@ -253,11 +255,38 @@ function statusType(s: string) {
   return 'info'
 }
 
+function onFilterChange() {
+  page.value = 1
+  load()
+}
+
+function onPageSizeChange() {
+  page.value = 1
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
-    const data = await adminApi<{ orders: OrderRow[] }>('/api/admin/orders')
+    const qs = buildQuery({
+      page: page.value,
+      pageSize: pageSize.value,
+      q: filters.q.trim(),
+      status: filters.status,
+      type: filters.type,
+      dateFrom: dateRange.value?.[0],
+      dateTo: dateRange.value?.[1],
+    })
+    const data = await adminApi<{
+      orders: OrderRow[]
+      total: number
+      page: number
+      pageSize: number
+    }>(`/api/admin/orders${qs}`)
     rows.value = data.orders
+    total.value = data.total
+    page.value = data.page
+    pageSize.value = data.pageSize
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.code : '加载失败')
   } finally {
@@ -395,5 +424,9 @@ watch(
 .empty-hint {
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+.table-pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 </style>

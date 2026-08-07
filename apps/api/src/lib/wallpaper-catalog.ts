@@ -29,6 +29,7 @@ export type CategoryRecord = {
   name: string
   slug: string
   sort: number
+  createdByAdminId?: string
   createdAt: string
   updatedAt: string
 }
@@ -37,6 +38,7 @@ export type TagRecord = {
   id: string
   name: string
   slug: string
+  createdByAdminId?: string
   createdAt: string
   updatedAt: string
 }
@@ -197,7 +199,7 @@ export async function ensureSeedCatalog(kv: KVNamespace): Promise<void> {
 
 export async function createCategory(
   kv: KVNamespace,
-  input: { name: string; slug: string; sort?: number },
+  input: { name: string; slug: string; sort?: number; createdByAdminId?: string },
 ): Promise<CategoryRecord> {
   const now = new Date().toISOString()
   const record: CategoryRecord = {
@@ -205,6 +207,7 @@ export async function createCategory(
     name: input.name.trim(),
     slug: input.slug.trim().toLowerCase(),
     sort: input.sort ?? 99,
+    createdByAdminId: input.createdByAdminId,
     createdAt: now,
     updatedAt: now,
   }
@@ -250,13 +253,14 @@ export async function deleteCategory(
 
 export async function createTag(
   kv: KVNamespace,
-  input: { name: string; slug: string },
+  input: { name: string; slug: string; createdByAdminId?: string },
 ): Promise<TagRecord> {
   const now = new Date().toISOString()
   const record: TagRecord = {
     id: crypto.randomUUID(),
     name: input.name.trim(),
     slug: input.slug.trim().toLowerCase(),
+    createdByAdminId: input.createdByAdminId,
     createdAt: now,
     updatedAt: now,
   }
@@ -373,6 +377,7 @@ export function toPublicWallpaper(
     tags: tagNames ?? [],
     hasOriginal: w.hasOriginal,
     rejectReason: w.rejectReason ?? null,
+    createdByAdminId: w.createdByAdminId ?? null,
     createdAt: w.createdAt,
     updatedAt: w.updatedAt,
   }

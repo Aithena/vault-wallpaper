@@ -12,7 +12,7 @@
       </div>
 
       <div class="filter-row" style="margin-bottom: 14px">
-        <el-select v-model="filters.success" style="width: 120px">
+        <el-select v-model="filters.success" style="width: 120px" @change="onFilterChange">
           <el-option label="全部结果" value="all" />
           <el-option label="成功" value="yes" />
           <el-option label="失败" value="no" />
@@ -24,16 +24,19 @@
           start-placeholder="起"
           end-placeholder="止"
           value-format="YYYY-MM-DD"
+          @change="onFilterChange"
         />
         <el-input
           v-model="filters.q"
           clearable
           placeholder="邮箱 / 壁纸 ID / 标题"
           style="width: 240px"
+          @change="onFilterChange"
+          @clear="onFilterChange"
         />
       </div>
 
-      <el-table :data="filtered" stripe border>
+      <el-table :data="rows" stripe border>
         <el-table-column label="时间" min-width="160">
           <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
         </el-table-column>
@@ -54,15 +57,27 @@
           <template #default="{ row }">{{ row.success ? '—' : row.error || '—' }}</template>
         </el-table-column>
       </el-table>
-      <p v-if="!loading && !filtered.length" class="empty-hint">暂无下载记录</p>
+      <p v-if="!loading && !rows.length" class="empty-hint">暂无下载记录</p>
+
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="table-pagination"
+        @size-change="onPageSizeChange"
+        @current-change="load"
+      />
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { adminApi, ApiError } from '../../lib/api'
+import { buildQuery } from '../../lib/query'
 
 type DownloadRow = {
   id: string
@@ -77,42 +92,47 @@ type DownloadRow = {
 
 const loading = ref(false)
 const rows = ref<DownloadRow[]>([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const dateRange = ref<[string, string] | null>(null)
 const filters = reactive({ success: 'all', q: '' })
-
-const filtered = computed(() =>
-  rows.value.filter((r) => {
-    if (filters.success === 'yes' && !r.success) return false
-    if (filters.success === 'no' && r.success) return false
-    const q = filters.q.trim().toLowerCase()
-    if (
-      q &&
-      !r.email.toLowerCase().includes(q) &&
-      !r.wallpaperId.toLowerCase().includes(q) &&
-      !r.wallpaperTitle.toLowerCase().includes(q)
-    ) {
-      return false
-    }
-    if (dateRange.value) {
-      const [from, to] = dateRange.value
-      const day = r.createdAt.slice(0, 10)
-      if (day < from || day > to) return false
-    }
-    return true
-  }),
-)
 
 function formatTime(v: string) {
   return v.replace('T', ' ').slice(0, 19)
 }
 
+function onFilterChange() {
+  page.value = 1
+  load()
+}
+
+function onPageSizeChange() {
+  page.value = 1
+  load()
+}
+
 async function load() {
   loading.value = true
   try {
-    const data = await adminApi<{ downloads: DownloadRow[] }>(
-      '/api/admin/downloads?limit=500',
-    )
+    const qs = buildQuery({
+      page: page.value,
+      pageSize: pageSize.value,
+      q: filters.q.trim(),
+      success: filters.success,
+      dateFrom: dateRange.value?.[0],
+      dateTo: dateRange.value?.[1],
+    })
+    const data = await adminApi<{
+      downloads: DownloadRow[]
+      total: number
+      page: number
+      pageSize: number
+    }>(`/api/admin/downloads${qs}`)
     rows.value = data.downloads
+    total.value = data.total
+    page.value = data.page
+    pageSize.value = data.pageSize
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.code : '加载失败')
   } finally {
@@ -128,5 +148,9 @@ onMounted(load)
   margin-top: 12px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+.table-pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 </style>

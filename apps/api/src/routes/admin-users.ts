@@ -7,6 +7,7 @@ import { writeAudit } from '../lib/audit'
 import { listOrdersByUser } from '../lib/orders'
 import { addToBlacklist, removeFromBlacklist } from '../lib/blacklist'
 import { listUserLogs, writeUserLog } from '../lib/user-logs'
+import { paginate, parsePageQuery } from '../lib/paging'
 import {
   activateMembership,
   getUser,
@@ -36,8 +37,45 @@ function publicUser(u: NonNullable<Awaited<ReturnType<typeof getUser>>>) {
 adminUsersRoutes.get('/', async (c) => {
   const denied = await requireMenu(c, 'users.list')
   if (denied) return denied
-  const users = await listUsers(c.env.KV)
-  return c.json({ users: users.map(publicUser) })
+  const q = c.req.query('q')?.trim().toLowerCase()
+  const blacklisted = c.req.query('blacklisted')
+  const memberType = c.req.query('memberType')
+  const dateFrom = c.req.query('dateFrom')?.trim()
+  const dateTo = c.req.query('dateTo')?.trim()
+
+  let users = await listUsers(c.env.KV)
+  if (q) {
+    users = users.filter((u) => u.email.toLowerCase().includes(q))
+  }
+  if (blacklisted === 'yes') {
+    users = users.filter((u) => u.blacklisted)
+  } else if (blacklisted === 'no') {
+    users = users.filter((u) => !u.blacklisted)
+  }
+  if (memberType === 'paid') {
+    users = users.filter(
+      (u) => isUserMembershipActive(u) && u.memberTier && u.memberTier !== 'free',
+    )
+  } else if (memberType === 'free') {
+    users = users.filter(
+      (u) => !isUserMembershipActive(u) || !u.memberTier || u.memberTier === 'free',
+    )
+  }
+  if (dateFrom) {
+    users = users.filter((u) => u.createdAt.slice(0, 10) >= dateFrom)
+  }
+  if (dateTo) {
+    users = users.filter((u) => u.createdAt.slice(0, 10) <= dateTo)
+  }
+
+  const { page, pageSize } = parsePageQuery(c.req.query())
+  const paged = paginate(users.map(publicUser), page, pageSize)
+  return c.json({
+    users: paged.items,
+    total: paged.total,
+    page: paged.page,
+    pageSize: paged.pageSize,
+  })
 })
 
 adminUsersRoutes.get('/:id', async (c) => {
@@ -58,9 +96,16 @@ adminUsersRoutes.get('/:id/logs', async (c) => {
   const id = c.req.param('id')
   const user = await getUser(c.env.KV, id)
   if (!user) return c.json({ error: 'not_found' }, 404)
-  const limit = Number(c.req.query('limit') || '100')
-  const logs = await listUserLogs(c.env.KV, id, Number.isFinite(limit) ? limit : 100)
-  return c.json({ user: publicUser(user), logs })
+  const { page, pageSize } = parsePageQuery(c.req.query(), { pageSize: 50 })
+  const logs = await listUserLogs(c.env.KV, id, 200)
+  const paged = paginate(logs, page, pageSize)
+  return c.json({
+    user: publicUser(user),
+    logs: paged.items,
+    total: paged.total,
+    page: paged.page,
+    pageSize: paged.pageSize,
+  })
 })
 
 adminUsersRoutes.patch('/:id', async (c) => {

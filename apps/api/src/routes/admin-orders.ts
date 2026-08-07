@@ -5,6 +5,7 @@ import { requireAdmin } from '../lib/admin-auth'
 import { requireButton, requireMenu } from '../lib/admin-perm'
 import { writeAudit } from '../lib/audit'
 import { isMembershipTierId } from '../lib/catalog'
+import { paginate, parsePageQuery } from '../lib/paging'
 import { getOrder, listOrders, saveOrder } from '../lib/orders'
 import {
   activateMembership,
@@ -40,7 +41,26 @@ function csvEscape(v: string | null | undefined) {
 adminOrdersRoutes.get('/', async (c) => {
   const denied = await requireMenu(c, 'orders.list')
   if (denied) return denied
-  const orders = await listOrders(c.env.KV)
+  const q = c.req.query('q')?.trim().toLowerCase()
+  const status = c.req.query('status')?.trim()
+  const type = c.req.query('type')?.trim()
+  const dateFrom = c.req.query('dateFrom')?.trim()
+  const dateTo = c.req.query('dateTo')?.trim()
+
+  let orders = await listOrders(c.env.KV)
+  if (status && status !== 'all') {
+    orders = orders.filter((o) => o.status === status)
+  }
+  if (type && type !== 'all') {
+    orders = orders.filter((o) => enrichType(o) === type)
+  }
+  if (dateFrom) {
+    orders = orders.filter((o) => o.createdAt.slice(0, 10) >= dateFrom)
+  }
+  if (dateTo) {
+    orders = orders.filter((o) => o.createdAt.slice(0, 10) <= dateTo)
+  }
+
   const enriched = await Promise.all(
     orders.map(async (o) => {
       const user = await getUser(c.env.KV, o.userId)
@@ -60,7 +80,24 @@ adminOrdersRoutes.get('/', async (c) => {
       }
     }),
   )
-  return c.json({ orders: enriched })
+
+  let filtered = enriched
+  if (q) {
+    filtered = enriched.filter(
+      (o) =>
+        o.id.toLowerCase().includes(q) ||
+        (o.userEmail?.toLowerCase().includes(q) ?? false),
+    )
+  }
+
+  const { page, pageSize } = parsePageQuery(c.req.query())
+  const paged = paginate(filtered, page, pageSize)
+  return c.json({
+    orders: paged.items,
+    total: paged.total,
+    page: paged.page,
+    pageSize: paged.pageSize,
+  })
 })
 
 adminOrdersRoutes.get('/export', async (c) => {

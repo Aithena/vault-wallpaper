@@ -9,7 +9,12 @@
       </div>
 
       <div class="filter-row" style="margin-bottom: 14px">
-        <el-select v-model="filters.memberType" placeholder="会员类型" style="width: 140px">
+        <el-select
+          v-model="filters.memberType"
+          placeholder="会员类型"
+          style="width: 140px"
+          @change="onFilterChange"
+        >
           <el-option label="全部" value="all" />
           <el-option label="付费会员" value="paid" />
           <el-option label="免费用户" value="free" />
@@ -21,16 +26,29 @@
           start-placeholder="注册起"
           end-placeholder="注册止"
           value-format="YYYY-MM-DD"
+          @change="onFilterChange"
         />
-        <el-select v-model="filters.blacklisted" placeholder="是否拉黑" style="width: 120px">
+        <el-select
+          v-model="filters.blacklisted"
+          placeholder="是否拉黑"
+          style="width: 120px"
+          @change="onFilterChange"
+        >
           <el-option label="全部" value="all" />
           <el-option label="已拉黑" value="yes" />
           <el-option label="未拉黑" value="no" />
         </el-select>
-        <el-input v-model="filters.q" clearable placeholder="搜索邮箱" style="width: 220px" />
+        <el-input
+          v-model="filters.q"
+          clearable
+          placeholder="搜索邮箱"
+          style="width: 220px"
+          @change="onFilterChange"
+          @clear="onFilterChange"
+        />
       </div>
 
-      <el-table :data="filtered" stripe border>
+      <el-table :data="users" stripe border>
         <el-table-column prop="email" label="邮箱" min-width="180" />
         <el-table-column label="会员档位" width="100">
           <template #default="{ row }">{{ row.memberTier ?? '—' }}</template>
@@ -98,6 +116,17 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="total"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="table-pagination"
+        @size-change="onPageSizeChange"
+        @current-change="load"
+      />
     </el-card>
 
     <el-dialog
@@ -170,6 +199,16 @@
         </el-table-column>
       </el-table>
       <p v-if="!logsLoading && !logs.length" class="empty-hint">暂无日志</p>
+      <el-pagination
+        v-model:current-page="logsPage"
+        v-model:page-size="logsPageSize"
+        :total="logsTotal"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        class="table-pagination"
+        @size-change="onLogsPageSizeChange"
+        @current-change="loadLogs"
+      />
       <template #footer>
         <el-button type="primary" @click="logsVisible = false">关闭</el-button>
       </template>
@@ -178,10 +217,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminApi, ApiError } from '../../lib/api'
+import { buildQuery } from '../../lib/query'
 import { usePermission } from '../../lib/permission'
 
 type UserRow = {
@@ -220,6 +260,9 @@ const { hasButton } = usePermission()
 const route = useRoute()
 const loading = ref(false)
 const users = ref<UserRow[]>([])
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const dateRange = ref<[string, string] | null>(null)
 const filters = reactive({
   memberType: 'all',
@@ -236,23 +279,9 @@ const logsVisible = ref(false)
 const logsLoading = ref(false)
 const logsUser = ref<UserRow | null>(null)
 const logs = ref<UserLogRow[]>([])
-
-const filtered = computed(() =>
-  users.value.filter((u) => {
-    if (filters.q && !u.email.includes(filters.q.trim().toLowerCase())) return false
-    if (filters.blacklisted === 'yes' && !u.blacklisted) return false
-    if (filters.blacklisted === 'no' && u.blacklisted) return false
-    const paid = u.membershipActive && u.memberTier && u.memberTier !== 'free'
-    if (filters.memberType === 'paid' && !paid) return false
-    if (filters.memberType === 'free' && paid) return false
-    if (dateRange.value) {
-      const [from, to] = dateRange.value
-      const day = u.createdAt.slice(0, 10)
-      if (day < from || day > to) return false
-    }
-    return true
-  }),
-)
+const logsPage = ref(1)
+const logsPageSize = ref(20)
+const logsTotal = ref(0)
 
 function formatTime(v: string | null | undefined) {
   if (!v) return '—'
@@ -277,11 +306,43 @@ function actorLabel(row: UserLogRow) {
   return '系统'
 }
 
+function onFilterChange() {
+  page.value = 1
+  load()
+}
+
+function onPageSizeChange() {
+  page.value = 1
+  load()
+}
+
+function onLogsPageSizeChange() {
+  logsPage.value = 1
+  loadLogs()
+}
+
 async function load() {
   loading.value = true
   try {
-    const data = await adminApi<{ users: UserRow[] }>('/api/admin/users')
+    const qs = buildQuery({
+      page: page.value,
+      pageSize: pageSize.value,
+      q: filters.q.trim(),
+      blacklisted: filters.blacklisted,
+      memberType: filters.memberType,
+      dateFrom: dateRange.value?.[0],
+      dateTo: dateRange.value?.[1],
+    })
+    const data = await adminApi<{
+      users: UserRow[]
+      total: number
+      page: number
+      pageSize: number
+    }>(`/api/admin/users${qs}`)
     users.value = data.users
+    total.value = data.total
+    page.value = data.page
+    pageSize.value = data.pageSize
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.code : '加载失败')
   } finally {
@@ -309,15 +370,29 @@ async function openDetail(row: UserRow) {
 
 async function openLogs(row: UserRow) {
   logsVisible.value = true
-  logsLoading.value = true
   logsUser.value = row
-  logs.value = []
+  logsPage.value = 1
+  await loadLogs()
+}
+
+async function loadLogs() {
+  if (!logsUser.value) return
+  logsLoading.value = true
   try {
-    const data = await adminApi<{ user: UserRow; logs: UserLogRow[] }>(
-      `/api/admin/users/${row.id}/logs?limit=100`,
-    )
-    logsUser.value = data.user
+    const qs = buildQuery({
+      page: logsPage.value,
+      pageSize: logsPageSize.value,
+    })
+    const data = await adminApi<{
+      logs: UserLogRow[]
+      total: number
+      page: number
+      pageSize: number
+    }>(`/api/admin/users/${logsUser.value.id}/logs${qs}`)
     logs.value = data.logs
+    logsTotal.value = data.total
+    logsPage.value = data.page
+    logsPageSize.value = data.pageSize
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.code : '加载日志失败')
   } finally {
@@ -399,6 +474,17 @@ async function renew(row: UserRow) {
   }
 }
 
+watch(
+  () => route.query.q,
+  (q) => {
+    if (typeof q === 'string' && q !== filters.q) {
+      filters.q = q
+      page.value = 1
+      load()
+    }
+  },
+)
+
 onMounted(load)
 </script>
 
@@ -412,5 +498,9 @@ onMounted(load)
   margin-top: 10px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+.table-pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 </style>

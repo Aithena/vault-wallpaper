@@ -23,6 +23,17 @@ export async function requireMenu(
   return null
 }
 
+export async function requireAnyMenu(
+  c: Context<AppEnv>,
+  menuKeys: string[],
+): Promise<Response | null> {
+  const { role } = await actorPerms(c)
+  if (!menuKeys.some((key) => role?.menus.includes(key))) {
+    return c.json({ error: 'forbidden' }, 403)
+  }
+  return null
+}
+
 export async function requireButton(
   c: Context<AppEnv>,
   buttonKey: string,

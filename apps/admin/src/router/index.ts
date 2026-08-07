@@ -42,6 +42,11 @@ export const router = createRouter({
           component: () => import('../views/wallpapers/WallpaperFormView.vue'),
         },
         {
+          path: 'wallpapers/batch',
+          name: 'wallpapers-batch',
+          component: () => import('../views/wallpapers/WallpaperBatchUploadView.vue'),
+        },
+        {
           path: 'wallpapers/:id',
           name: 'wallpapers-edit',
           component: () => import('../views/wallpapers/WallpaperFormView.vue'),
