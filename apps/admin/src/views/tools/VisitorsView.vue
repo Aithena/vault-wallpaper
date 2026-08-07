@@ -254,7 +254,7 @@ function formatTime(v: string) {
   return v.replace('T', ' ').slice(0, 19)
 }
 
-function geoLabel(row: PvRow) {
+function geoLabel(row: { country?: string; region?: string; city?: string }) {
   return [row.country, row.region, row.city].filter(Boolean).join(' · ') || '—'
 }
 
