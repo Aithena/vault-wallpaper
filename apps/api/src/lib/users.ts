@@ -159,6 +159,19 @@ export async function activateMembership(
   return user
 }
 
+/** Mark membership inactive (e.g. after refund). Keeps history fields. */
+export async function revokeMembership(
+  kv: KVNamespace,
+  userId: string,
+): Promise<UserRecord | null> {
+  const user = await getUser(kv, userId)
+  if (!user) return null
+  user.memberStatus = 'disabled'
+  user.memberExpiresAt = new Date().toISOString()
+  await kv.put(userKey(userId), JSON.stringify(user))
+  return user
+}
+
 export function toSessionUser(user: UserRecord) {
   const active = isUserMembershipActive(user)
   return {

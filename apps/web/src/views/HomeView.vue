@@ -28,9 +28,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { MEMBERSHIP_TIERS, isMembershipValid, type WallpaperPublic } from '@vault/shared'
+import { isMembershipValid, type WallpaperPublic } from '@vault/shared'
 import { api, apiUrl, getToken } from '../lib/api'
 import { authState } from '../lib/auth'
+import { loadSitePublic, tierLabel } from '../lib/site'
 
 const router = useRouter()
 const items = ref<WallpaperPublic[]>([])
@@ -38,11 +39,8 @@ const loading = ref(true)
 const error = ref('')
 const downloading = ref<string | null>(null)
 
-function tierLabel(tier: WallpaperPublic['tierRequired']) {
-  return MEMBERSHIP_TIERS[tier].label
-}
-
 onMounted(async () => {
+  void loadSitePublic()
   try {
     const data = await api<{ items: WallpaperPublic[] }>('/api/wallpapers')
     items.value = data.items

@@ -78,3 +78,23 @@ export async function adminUpload<T>(
   form.append(fieldName, file)
   return adminApi<T>(path, { method: 'POST', body: form })
 }
+
+/** Download a non-JSON admin response (e.g. CSV export). */
+export async function adminDownload(path: string, filename: string): Promise<void> {
+  const headers = new Headers()
+  const token = getAdminToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const res = await fetch(apiUrl(path), { headers })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new ApiError(data.error || res.statusText || 'request_failed', res.status)
+  }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+

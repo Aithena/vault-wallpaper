@@ -22,9 +22,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { MEMBERSHIP_TIERS, type MembershipTierId } from '@vault/shared'
 import { api } from '../lib/api'
 import { authState, refreshMe } from '../lib/auth'
+import { loadSitePublic, tierLabel as resolveTierLabel } from '../lib/site'
 
 const route = useRoute()
 const orderId = String(route.query.orderId || '')
@@ -57,14 +57,7 @@ const statusLine = computed(() => {
   return `状态：${order.value.status}`
 })
 
-const tierLabel = computed(() => {
-  const tier = order.value?.tier
-  if (!tier) return '—'
-  if (tier in MEMBERSHIP_TIERS) {
-    return MEMBERSHIP_TIERS[tier as MembershipTierId].label
-  }
-  return tier
-})
+const tierLabel = computed(() => resolveTierLabel(order.value?.tier))
 
 const amountLine = computed(() => {
   if (!order.value || isFree.value) return ''
@@ -88,6 +81,7 @@ function formatExpire(iso: string) {
 }
 
 onMounted(async () => {
+  void loadSitePublic()
   await refreshMe()
   if (!orderId) {
     loading.value = false

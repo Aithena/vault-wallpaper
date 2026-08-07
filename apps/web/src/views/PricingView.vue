@@ -1,8 +1,17 @@
 <template>
   <section class="hero">
     <h1>会员套餐</h1>
-    <p>单次购买续期一年；有效期内再次购买，从到期日继续顺延一年。</p>
+    <p>
+      {{
+        siteState.config.purchaseNotice ||
+        '单次购买续期一年；有效期内再次购买，从到期日继续顺延一年。'
+      }}
+    </p>
   </section>
+
+  <div v-if="!siteState.config.purchaseEnabled" class="panel" style="margin-bottom: 20px">
+    <p class="hint" style="margin: 0">当前暂未开放购买，仅可浏览或开通免费档（若仍开放）。</p>
+  </div>
 
   <div v-if="!authState.user" class="panel" style="margin-bottom: 20px">
     <p class="hint" style="margin: 0">请先登录后再开通。</p>
@@ -23,14 +32,14 @@
   </div>
 
   <div class="price-grid">
-    <article v-for="tier in tiers" :key="tier.id" class="price-card">
+    <article v-for="tier in siteState.tiers" :key="tier.id" class="price-card">
       <div>{{ tier.label }}</div>
       <div class="price">{{ priceText(tier.priceYuan) }}</div>
-      <div class="desc">{{ descMap[tier.id] }}</div>
+      <div class="desc">{{ tier.benefit || '—' }}</div>
       <button
         class="btn block"
         type="button"
-        :disabled="!authState.user || buying === tier.id"
+        :disabled="!canBuy(tier.id) || buying === tier.id"
         @click="buy(tier.id)"
       >
         {{ buttonText(tier.id) }}
@@ -43,37 +52,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  MEMBERSHIP_TIERS,
-  isMembershipValid,
-  type MembershipTierId,
-} from '@vault/shared'
+import { isMembershipValid, type MembershipTierId } from '@vault/shared'
 import { api } from '../lib/api'
 import { authState, refreshMe } from '../lib/auth'
+import { loadSitePublic, siteState, tierLabel } from '../lib/site'
 
 const router = useRouter()
-const tiers = Object.values(MEMBERSHIP_TIERS)
 const buying = ref<MembershipTierId | null>(null)
 const message = ref('')
 const error = ref('')
 
-const descMap: Record<MembershipTierId, string> = {
-  free: '限时免费体验',
-  basic: '解锁基础档壁纸原图，有效期一年。',
-  pro: '解锁进阶及以下档位原图，有效期一年。',
-  max: '解锁全部壁纸原图，有效期一年。',
-}
+onMounted(() => {
+  void loadSitePublic()
+})
 
 function priceText(priceYuan: string) {
   if (priceYuan === '0.00' || priceYuan === '0') return '免费'
   return `¥${priceYuan}`
-}
-
-function tierLabel(tier: MembershipTierId | null) {
-  if (!tier) return '—'
-  return MEMBERSHIP_TIERS[tier].label
 }
 
 function formatExpire(iso: string) {
@@ -89,9 +86,18 @@ function formatExpire(iso: string) {
   }
 }
 
+function canBuy(tier: MembershipTierId) {
+  if (!authState.user) return false
+  if (tier === 'free') return true
+  return siteState.config.purchaseEnabled
+}
+
 function buttonText(tier: MembershipTierId) {
   if (buying.value === tier) {
     return tier === 'free' ? '开通中…' : '处理中…'
+  }
+  if (tier !== 'free' && !siteState.config.purchaseEnabled) {
+    return '暂未开放'
   }
   const u = authState.user
   if (u && isMembershipValid(u) && u.memberTier === tier) {
@@ -135,7 +141,11 @@ async function buy(tier: MembershipTierId) {
 
     message.value = '已创建虎皮椒订单，请按返回参数完成跳转支付（待接前端表单提交）'
   } catch (e) {
-    error.value = e instanceof Error ? e.message : '下单失败'
+    const code = e instanceof Error ? e.message : '下单失败'
+    if (code === 'purchase_disabled') error.value = '暂未开放购买'
+    else if (code === 'tier_not_on_sale') error.value = '该档位已下架'
+    else if (code === 'blacklisted') error.value = '账号已被限制购买'
+    else error.value = code
   } finally {
     buying.value = null
   }

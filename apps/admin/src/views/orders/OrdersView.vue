@@ -4,7 +4,16 @@
       <div class="page-toolbar">
         <div>
           <h1>全部订单</h1>
-          <p class="sub">含正式付费、0 元免费开通、后台手工开通；P0 以只读为主。</p>
+          <p class="sub">含正式付费、0 元免费开通、后台手工开通；支持补发、标记退款与导出。</p>
+        </div>
+        <div class="actions">
+          <el-button
+            v-if="hasButton('orders.list.export')"
+            :loading="exporting"
+            @click="exportCsv"
+          >
+            导出 CSV
+          </el-button>
         </div>
       </div>
 
@@ -58,9 +67,27 @@
         <el-table-column label="支付时间" min-width="160">
           <template #default="{ row }">{{ formatTime(row.paidAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="90">
+        <el-table-column label="操作" fixed="right" width="220">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row as OrderRow)">详情</el-button>
+            <el-button
+              v-if="hasButton('orders.list.regrant')"
+              link
+              type="primary"
+              :disabled="row.status !== 'paid'"
+              @click="regrant(row as OrderRow)"
+            >
+              补发
+            </el-button>
+            <el-button
+              v-if="hasButton('orders.list.refund')"
+              link
+              type="warning"
+              :disabled="row.status !== 'paid'"
+              @click="refund(row as OrderRow)"
+            >
+              退款
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -87,6 +114,11 @@
           <el-descriptions-item label="用户 ID">{{ detailOrder.userId }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatTime(detailOrder.createdAt) }}</el-descriptions-item>
           <el-descriptions-item label="支付时间">{{ formatTime(detailOrder.paidAt) }}</el-descriptions-item>
+          <el-descriptions-item label="补发时间">{{ formatTime(detailOrder.regrantedAt) }}</el-descriptions-item>
+          <el-descriptions-item label="退款时间">{{ formatTime(detailOrder.refundedAt) }}</el-descriptions-item>
+          <el-descriptions-item label="退款备注" :span="2">
+            {{ detailOrder.refundNote || '—' }}
+          </el-descriptions-item>
           <el-descriptions-item label="回调时间">{{ formatTime(detailOrder.callbackAt) }}</el-descriptions-item>
         </el-descriptions>
 
@@ -114,6 +146,19 @@
       </div>
       <template #footer>
         <el-button
+          v-if="detailOrder?.status === 'paid' && hasButton('orders.list.regrant')"
+          @click="regrant(detailOrder)"
+        >
+          补发会员
+        </el-button>
+        <el-button
+          v-if="detailOrder?.status === 'paid' && hasButton('orders.list.refund')"
+          type="warning"
+          @click="refund(detailOrder)"
+        >
+          标记退款
+        </el-button>
+        <el-button
           v-if="detailOrder?.userId"
           @click="$router.push({ path: '/users', query: { q: detailOrder.userEmail || '' } })"
         >
@@ -128,8 +173,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { adminApi, ApiError } from '../../lib/api'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { adminApi, adminDownload, ApiError } from '../../lib/api'
+import { usePermission } from '../../lib/permission'
 
 type OrderRow = {
   id: string
@@ -142,6 +188,9 @@ type OrderRow = {
   createdAt: string
   paidAt?: string | null
   hasCallback?: boolean
+  refundedAt?: string | null
+  regrantedAt?: string | null
+  refundNote?: string | null
 }
 
 type OrderDetail = OrderRow & {
@@ -158,8 +207,10 @@ type UserBrief = {
   membershipActive?: boolean
 }
 
+const { hasButton } = usePermission()
 const route = useRoute()
 const loading = ref(false)
+const exporting = ref(false)
 const rows = ref<OrderRow[]>([])
 const dateRange = ref<[string, string] | null>(null)
 const filters = reactive({ status: 'all', type: 'all', q: '' })
@@ -229,6 +280,73 @@ async function openDetail(row: OrderRow) {
     ElMessage.error(e instanceof ApiError ? e.code : '加载详情失败')
   } finally {
     detailLoading.value = false
+  }
+}
+
+async function regrant(row: OrderRow) {
+  try {
+    await ElMessageBox.confirm(
+      `为订单 ${row.id} 补发「${row.tier}」会员权益？将按续费规则延长有效期。`,
+      '补发会员',
+    )
+    await adminApi(`/api/admin/orders/${row.id}/regrant`, { method: 'POST' })
+    ElMessage.success('已补发')
+    await load()
+    if (detailVisible.value && detailOrder.value?.id === row.id) {
+      await openDetail(row)
+    }
+  } catch (e) {
+    if (e === 'cancel') return
+    ElMessage.error(e instanceof ApiError ? e.code : '补发失败')
+  }
+}
+
+async function refund(row: OrderRow) {
+  try {
+    const { value: note } = await ElMessageBox.prompt('退款备注（可选）', '标记退款', {
+      inputPlaceholder: '如：用户申请退款',
+      distinguishCancelAndClose: true,
+    })
+    let revokeMembership = false
+    try {
+      await ElMessageBox.confirm('是否同时收回该用户的会员权益？', '收回会员', {
+        confirmButtonText: '收回会员',
+        cancelButtonText: '仅标记退款',
+        distinguishCancelAndClose: true,
+        type: 'warning',
+      })
+      revokeMembership = true
+    } catch (inner) {
+      if (inner === 'close') return
+      revokeMembership = false
+    }
+    await adminApi(`/api/admin/orders/${row.id}/refund`, {
+      method: 'POST',
+      body: JSON.stringify({ note, revokeMembership }),
+    })
+    ElMessage.success(revokeMembership ? '已退款并收回会员' : '已标记退款')
+    await load()
+    if (detailVisible.value && detailOrder.value?.id === row.id) {
+      await openDetail(row)
+    }
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(e instanceof ApiError ? e.code : '退款失败')
+  }
+}
+
+async function exportCsv() {
+  exporting.value = true
+  try {
+    await adminDownload(
+      '/api/admin/orders/export',
+      `orders-${new Date().toISOString().slice(0, 10)}.csv`,
+    )
+    ElMessage.success('已开始下载')
+  } catch (e) {
+    ElMessage.error(e instanceof ApiError ? e.code : '导出失败')
+  } finally {
+    exporting.value = false
   }
 }
 

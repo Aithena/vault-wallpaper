@@ -4,7 +4,7 @@ import type { AppEnv } from '../types'
 import {
   isMembershipTierId,
 } from '../lib/catalog'
-import { resolveConfiguredTierPrice } from '../lib/tiers-config'
+import { resolveConfiguredTierPrice, getTierConfigs } from '../lib/tiers-config'
 import { getSiteConfig } from '../lib/site-config'
 import { readBearer, verifySession } from '../lib/session'
 import { activateMembership, getUser } from '../lib/users'
@@ -40,6 +40,12 @@ payRoutes.post('/create', async (c) => {
   const site = await getSiteConfig(c.env.KV)
   if (!site.purchaseEnabled && tier !== 'free') {
     return c.json({ error: 'purchase_disabled' }, 403)
+  }
+
+  const tiers = await getTierConfigs(c.env.KV)
+  const tierCfg = tiers.find((t) => t.id === tier)
+  if (tierCfg && tierCfg.onSale === false) {
+    return c.json({ error: 'tier_not_on_sale' }, 403)
   }
 
   const orderId = generateOrderId()
@@ -107,7 +113,7 @@ payRoutes.post('/create', async (c) => {
     appid,
     trade_order_id: orderId,
     total_fee: totalFee,
-    title: `${MEMBERSHIP_TIERS[tier].label}会员（一年）`,
+    title: `${tierCfg?.label || MEMBERSHIP_TIERS[tier].label}会员（一年）`,
     time,
     notify_url: notifyUrl,
     return_url: returnUrl,

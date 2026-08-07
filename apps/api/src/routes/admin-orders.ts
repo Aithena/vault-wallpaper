@@ -1,15 +1,40 @@
 import { Hono } from 'hono'
+import { ORDER_STATUS, type MembershipTierId } from '@vault/shared'
 import type { AppEnv } from '../types'
 import { requireAdmin } from '../lib/admin-auth'
-import { requireMenu } from '../lib/admin-perm'
-import { getOrder, listOrders } from '../lib/orders'
-import { getUser, isUserMembershipActive } from '../lib/users'
+import { requireButton, requireMenu } from '../lib/admin-perm'
+import { writeAudit } from '../lib/audit'
+import { isMembershipTierId } from '../lib/catalog'
+import { getOrder, listOrders, saveOrder } from '../lib/orders'
+import {
+  activateMembership,
+  getUser,
+  isUserMembershipActive,
+  revokeMembership,
+} from '../lib/users'
+import { writeUserLog } from '../lib/user-logs'
 
 export const adminOrdersRoutes = new Hono<AppEnv>()
 adminOrdersRoutes.use('*', requireAdmin)
 
 function enrichType(o: { type?: string; totalFee: string }) {
   return o.type ?? (o.totalFee === '0.00' || o.totalFee === '0' ? 'free' : 'paid')
+}
+
+async function enrichOrder(kv: KVNamespace, o: Awaited<ReturnType<typeof getOrder>>) {
+  if (!o) return null
+  const user = await getUser(kv, o.userId)
+  return {
+    ...o,
+    type: enrichType(o),
+    userEmail: user?.email ?? null,
+  }
+}
+
+function csvEscape(v: string | null | undefined) {
+  const s = v ?? ''
+  if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
 }
 
 adminOrdersRoutes.get('/', async (c) => {
@@ -30,10 +55,64 @@ adminOrdersRoutes.get('/', async (c) => {
         createdAt: o.createdAt,
         paidAt: o.paidAt ?? null,
         hasCallback: Boolean(o.callbackPayload),
+        refundedAt: o.refundedAt ?? null,
+        regrantedAt: o.regrantedAt ?? null,
       }
     }),
   )
   return c.json({ orders: enriched })
+})
+
+adminOrdersRoutes.get('/export', async (c) => {
+  const denied = await requireButton(c, 'orders.list.export')
+  if (denied) return denied
+  const orders = await listOrders(c.env.KV)
+  const header = [
+    'id',
+    'userEmail',
+    'userId',
+    'type',
+    'tier',
+    'totalFee',
+    'status',
+    'createdAt',
+    'paidAt',
+    'refundedAt',
+  ]
+  const lines = [header.join(',')]
+  for (const o of orders) {
+    const user = await getUser(c.env.KV, o.userId)
+    lines.push(
+      [
+        csvEscape(o.id),
+        csvEscape(user?.email),
+        csvEscape(o.userId),
+        csvEscape(enrichType(o)),
+        csvEscape(o.tier),
+        csvEscape(o.totalFee),
+        csvEscape(o.status),
+        csvEscape(o.createdAt),
+        csvEscape(o.paidAt),
+        csvEscape(o.refundedAt),
+      ].join(','),
+    )
+  }
+
+  const admin = c.get('admin')!
+  await writeAudit(c.env.KV, {
+    adminId: admin.id,
+    adminUsername: admin.username,
+    action: 'orders.list.export',
+    target: `orders:${orders.length}`,
+  })
+
+  const bom = '\uFEFF'
+  return new Response(bom + lines.join('\n'), {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="orders-${new Date().toISOString().slice(0, 10)}.csv"`,
+    },
+  })
 })
 
 adminOrdersRoutes.get('/:id', async (c) => {
@@ -43,11 +122,7 @@ adminOrdersRoutes.get('/:id', async (c) => {
   if (!order) return c.json({ error: 'not_found' }, 404)
   const user = await getUser(c.env.KV, order.userId)
   return c.json({
-    order: {
-      ...order,
-      type: enrichType(order),
-      userEmail: user?.email ?? null,
-    },
+    order: await enrichOrder(c.env.KV, order),
     user: user
       ? {
           id: user.id,
@@ -56,6 +131,120 @@ adminOrdersRoutes.get('/:id', async (c) => {
           memberStatus: user.memberStatus,
           memberExpiresAt: user.memberExpiresAt,
           accountStatus: user.accountStatus ?? 'active',
+          membershipActive: isUserMembershipActive(user),
+        }
+      : null,
+  })
+})
+
+/** Replay fulfillment: grant membership for this order's tier. */
+adminOrdersRoutes.post('/:id/regrant', async (c) => {
+  const denied = await requireButton(c, 'orders.list.regrant')
+  if (denied) return denied
+  const order = await getOrder(c.env.KV, c.req.param('id'))
+  if (!order) return c.json({ error: 'not_found' }, 404)
+  if (order.status !== ORDER_STATUS.paid) {
+    return c.json({ error: 'order_not_paid' }, 400)
+  }
+  if (!isMembershipTierId(order.tier)) {
+    return c.json({ error: 'invalid_tier' }, 400)
+  }
+
+  const user = await activateMembership(
+    c.env.KV,
+    order.userId,
+    order.tier as MembershipTierId,
+  )
+  if (!user) return c.json({ error: 'user_not_found' }, 404)
+
+  order.regrantedAt = new Date().toISOString()
+  await saveOrder(c.env.KV, order)
+
+  const admin = c.get('admin')!
+  await writeUserLog(c.env.KV, {
+    userId: order.userId,
+    action: 'order.regrant',
+    detail: `order=${order.id};tier=${order.tier}`,
+    actorType: 'admin',
+    actorId: admin.id,
+    actorName: admin.username,
+  })
+  await writeAudit(c.env.KV, {
+    adminId: admin.id,
+    adminUsername: admin.username,
+    action: 'orders.list.regrant',
+    target: `order:${order.id}`,
+    detail: order.tier,
+  })
+
+  return c.json({
+    ok: true,
+    order: await enrichOrder(c.env.KV, order),
+    user: {
+      id: user.id,
+      email: user.email,
+      memberTier: user.memberTier,
+      memberExpiresAt: user.memberExpiresAt,
+      membershipActive: isUserMembershipActive(user),
+    },
+  })
+})
+
+adminOrdersRoutes.post('/:id/refund', async (c) => {
+  const denied = await requireButton(c, 'orders.list.refund')
+  if (denied) return denied
+  const body = (await c.req.json().catch(() => ({}))) as {
+    note?: string
+    revokeMembership?: boolean
+  }
+  const order = await getOrder(c.env.KV, c.req.param('id'))
+  if (!order) return c.json({ error: 'not_found' }, 404)
+  if (order.status === ORDER_STATUS.refunded) {
+    return c.json({ error: 'already_refunded' }, 400)
+  }
+  if (order.status !== ORDER_STATUS.paid) {
+    return c.json({ error: 'order_not_paid' }, 400)
+  }
+
+  order.status = ORDER_STATUS.refunded
+  order.refundedAt = new Date().toISOString()
+  order.refundNote = body.note?.trim() || undefined
+  await saveOrder(c.env.KV, order)
+
+  let user = await getUser(c.env.KV, order.userId)
+  if (body.revokeMembership) {
+    user = await revokeMembership(c.env.KV, order.userId)
+  }
+
+  const admin = c.get('admin')!
+  await writeUserLog(c.env.KV, {
+    userId: order.userId,
+    action: 'order.refund',
+    detail: `order=${order.id};revoke=${Boolean(body.revokeMembership)};note=${order.refundNote || ''}`,
+    actorType: 'admin',
+    actorId: admin.id,
+    actorName: admin.username,
+  })
+  await writeAudit(c.env.KV, {
+    adminId: admin.id,
+    adminUsername: admin.username,
+    action: 'orders.list.refund',
+    target: `order:${order.id}`,
+    detail: JSON.stringify({
+      revokeMembership: Boolean(body.revokeMembership),
+      note: order.refundNote,
+    }),
+  })
+
+  return c.json({
+    ok: true,
+    order: await enrichOrder(c.env.KV, order),
+    user: user
+      ? {
+          id: user.id,
+          email: user.email,
+          memberTier: user.memberTier,
+          memberExpiresAt: user.memberExpiresAt,
           membershipActive: isUserMembershipActive(user),
         }
       : null,

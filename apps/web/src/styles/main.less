@@ -104,8 +104,43 @@ input {
 .main {
   width: min(1100px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 28px 0 64px;
+  padding: 28px 0 40px;
   flex: 1;
+}
+
+.announcement-bar {
+  width: min(1100px, calc(100% - 32px));
+  margin: 12px auto 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(61, 156, 253, 0.1);
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.announcement-item + .announcement-item {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.announcement-item strong {
+  color: var(--accent);
+}
+
+.site-footer {
+  width: min(1100px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 20px 0 32px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--line);
+
+  p {
+    margin: 0;
+  }
 }
 
 .hero {

@@ -11,6 +11,9 @@ export type OrderRecord = {
   /** Last payment notify payload (虎皮椒 etc.) */
   callbackAt?: string
   callbackPayload?: Record<string, string>
+  refundedAt?: string
+  refundNote?: string
+  regrantedAt?: string
 }
 
 function normalizeOrder(order: OrderRecord): OrderRecord {
