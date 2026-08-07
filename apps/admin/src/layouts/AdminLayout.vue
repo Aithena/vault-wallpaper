@@ -185,6 +185,8 @@ const activeGroup = computed(() => {
 
 const activeChildPath = computed(() => {
   if (route.path.startsWith('/wallpapers')) return '/wallpapers'
+  if (route.path === '/users/online') return '/users/online'
+  if (route.path === '/users/blacklist') return '/users/blacklist'
   return route.path
 })
 

@@ -31,6 +31,7 @@ import { useRouter } from 'vue-router'
 import { isMembershipValid, type WallpaperPublic } from '@vault/shared'
 import { api, apiUrl, getToken } from '../lib/api'
 import { authState } from '../lib/auth'
+import { getBrowseSessionId } from '../lib/browse-session'
 import { loadSitePublic, tierLabel } from '../lib/site'
 
 const router = useRouter()
@@ -64,8 +65,13 @@ async function onDownload(item: WallpaperPublic) {
   downloading.value = item.id
   error.value = ''
   try {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${getToken()}`,
+    }
+    const browseSessionId = getBrowseSessionId()
+    if (browseSessionId) headers['X-Browse-Session-Id'] = browseSessionId
     const res = await fetch(apiUrl(`/api/wallpapers/${item.id}/download`), {
-      headers: { Authorization: `Bearer ${getToken()}` },
+      headers,
     })
     if (!res.ok) {
       const data = await res.json().catch(() => ({}))

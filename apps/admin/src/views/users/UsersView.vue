@@ -166,6 +166,30 @@
           </el-table-column>
         </el-table>
         <p v-if="!detailOrders.length" class="empty-hint">暂无订单</p>
+
+        <h3 class="section-title">浏览路径（登录会话）</h3>
+        <el-collapse v-if="browseSessions.length" v-model="browseActive">
+          <el-collapse-item
+            v-for="s in browseSessions"
+            :key="s.id"
+            :name="s.id"
+            :title="browseSessionTitle(s)"
+          >
+            <el-timeline>
+              <el-timeline-item
+                v-for="(ev, idx) in s.events"
+                :key="`${s.id}-${idx}`"
+                :timestamp="formatTime(ev.at)"
+                placement="top"
+              >
+                <strong>{{ eventTypeLabel(ev.type) }}</strong>
+                <span v-if="ev.label"> · {{ ev.label }}</span>
+                <div class="path-line">{{ ev.path }}</div>
+              </el-timeline-item>
+            </el-timeline>
+          </el-collapse-item>
+        </el-collapse>
+        <p v-else class="empty-hint">暂无浏览会话（需用户重新登录后开始记录）</p>
       </div>
       <template #footer>
         <el-button
@@ -246,6 +270,24 @@ type OrderRow = {
   createdAt: string
 }
 
+type BrowseEvent = {
+  at: string
+  type: string
+  path: string
+  label?: string
+  wallpaperId?: string
+}
+
+type BrowseSession = {
+  id: string
+  startedAt: string
+  lastAt: string
+  endedAt: string | null
+  endReason: string | null
+  eventCount: number
+  events: BrowseEvent[]
+}
+
 type UserLogRow = {
   id: string
   at: string
@@ -274,6 +316,8 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detailUser = ref<UserRow | null>(null)
 const detailOrders = ref<OrderRow[]>([])
+const browseSessions = ref<BrowseSession[]>([])
+const browseActive = ref<string[]>([])
 
 const logsVisible = ref(false)
 const logsLoading = ref(false)
@@ -355,17 +399,42 @@ async function openDetail(row: UserRow) {
   detailLoading.value = true
   detailUser.value = row
   detailOrders.value = []
+  browseSessions.value = []
+  browseActive.value = []
   try {
-    const data = await adminApi<{ user: UserRow; orders: OrderRow[] }>(
-      `/api/admin/users/${row.id}`,
-    )
+    const [data, browse] = await Promise.all([
+      adminApi<{ user: UserRow; orders: OrderRow[] }>(`/api/admin/users/${row.id}`),
+      adminApi<{ sessions: BrowseSession[] }>(`/api/admin/users/${row.id}/browse-sessions`),
+    ])
     detailUser.value = data.user
     detailOrders.value = data.orders
+    browseSessions.value = browse.sessions
+    if (browse.sessions[0]) browseActive.value = [browse.sessions[0].id]
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.code : '加载详情失败')
   } finally {
     detailLoading.value = false
   }
+}
+
+function browseSessionTitle(s: BrowseSession) {
+  const start = formatTime(s.startedAt)
+  const end = s.endedAt ? formatTime(s.endedAt) : '进行中'
+  const reason =
+    s.endReason === 'logout'
+      ? '退出'
+      : s.endReason === 'relogin'
+        ? '再次登录'
+        : s.endReason === 'idle'
+          ? '空闲超时'
+          : ''
+  return `${start} → ${end}${reason ? `（${reason}）` : ''} · ${s.eventCount} 步`
+}
+
+function eventTypeLabel(t: string) {
+  return (
+    { login: '登录', logout: '退出', page: '浏览', download: '下载' }[t] ?? t
+  )
 }
 
 async function openLogs(row: UserRow) {
@@ -498,6 +567,12 @@ onMounted(load)
   margin-top: 10px;
   color: var(--el-text-color-secondary);
   font-size: 13px;
+}
+.path-line {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  word-break: break-all;
 }
 .table-pagination {
   margin-top: 16px;

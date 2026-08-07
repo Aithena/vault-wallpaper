@@ -13,6 +13,8 @@ import { getPreviewObject, originalKey } from '../lib/r2-wallpaper'
 import { writeDownload } from '../lib/downloads'
 import { readBearer, verifySession } from '../lib/session'
 import { getUser, isUserMembershipActive } from '../lib/users'
+import { appendBrowseEvent } from '../lib/browse-sessions'
+import { touchPresence } from '../lib/presence'
 
 export const wallpaperRoutes = new Hono<AppEnv>()
 
@@ -124,6 +126,19 @@ wallpaperRoutes.get('/:id/download', async (c) => {
     ...logBase,
     success: true,
   })
+
+  const browseSessionId = c.req.header('x-browse-session-id')?.trim()
+  if (browseSessionId) {
+    await appendBrowseEvent(c.env.KV, {
+      sessionId: browseSessionId,
+      userId: user.id,
+      type: 'download',
+      path: `/wallpapers/${id}/download`,
+      label: `下载 ${item.title}`,
+      wallpaperId: id,
+    })
+    await touchPresence(c.env.KV, user, `/wallpapers/${id}`)
+  }
 
   const headers = new Headers()
   object.writeHttpMetadata(headers)

@@ -13,6 +13,8 @@ import {
 import { signSession } from '../lib/session'
 import { findOrCreateUserByEmail, toSessionUser } from '../lib/users'
 import { writeUserLog } from '../lib/user-logs'
+import { startBrowseSession } from '../lib/browse-sessions'
+import { touchPresence } from '../lib/presence'
 
 export const authRoutes = new Hono<AppEnv>()
 
@@ -97,6 +99,12 @@ authRoutes.post('/verify', async (c) => {
     actorName: user.email,
   })
 
+  const browseSession = await startBrowseSession(c.env.KV, {
+    userId: user.id,
+    email: user.email,
+  })
+  await touchPresence(c.env.KV, user, '/login')
+
   const token = await signSession(c.env.JWT_SECRET, {
     sub: user.id,
     email: user.email,
@@ -105,6 +113,7 @@ authRoutes.post('/verify', async (c) => {
   return c.json({
     ok: true,
     token,
+    browseSessionId: browseSession.id,
     user: toSessionUser(user),
   })
 })

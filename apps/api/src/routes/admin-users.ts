@@ -7,6 +7,8 @@ import { writeAudit } from '../lib/audit'
 import { listOrdersByUser } from '../lib/orders'
 import { addToBlacklist, removeFromBlacklist } from '../lib/blacklist'
 import { listUserLogs, writeUserLog } from '../lib/user-logs'
+import { listOnlinePresence, ONLINE_WINDOW_MS } from '../lib/presence'
+import { listBrowseSessionsByUser } from '../lib/browse-sessions'
 import { paginate, parsePageQuery } from '../lib/paging'
 import {
   activateMembership,
@@ -33,6 +35,18 @@ function publicUser(u: NonNullable<Awaited<ReturnType<typeof getUser>>>) {
     membershipActive: isUserMembershipActive(u),
   }
 }
+
+adminUsersRoutes.get('/online', async (c) => {
+  const denied = await requireMenu(c, 'users.online')
+  if (denied) return denied
+  const membersOnly = c.req.query('membersOnly') !== '0'
+  const online = await listOnlinePresence(c.env.KV, { membersOnly })
+  return c.json({
+    online,
+    total: online.length,
+    windowMs: ONLINE_WINDOW_MS,
+  })
+})
 
 adminUsersRoutes.get('/', async (c) => {
   const denied = await requireMenu(c, 'users.list')
@@ -105,6 +119,27 @@ adminUsersRoutes.get('/:id/logs', async (c) => {
     total: paged.total,
     page: paged.page,
     pageSize: paged.pageSize,
+  })
+})
+
+adminUsersRoutes.get('/:id/browse-sessions', async (c) => {
+  const denied = await requireMenu(c, 'users.list')
+  if (denied) return denied
+  const id = c.req.param('id')
+  const user = await getUser(c.env.KV, id)
+  if (!user) return c.json({ error: 'not_found' }, 404)
+  const sessions = await listBrowseSessionsByUser(c.env.KV, id, 30)
+  return c.json({
+    user: publicUser(user),
+    sessions: sessions.map((s) => ({
+      id: s.id,
+      startedAt: s.startedAt,
+      lastAt: s.lastAt,
+      endedAt: s.endedAt ?? null,
+      endReason: s.endReason ?? null,
+      eventCount: s.events.length,
+      events: s.events,
+    })),
   })
 })
 

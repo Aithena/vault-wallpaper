@@ -33,6 +33,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, setToken } from '../lib/api'
 import { refreshMe } from '../lib/auth'
+import { setBrowseSessionId } from '../lib/browse-session'
 
 const router = useRouter()
 const email = ref('')
@@ -68,11 +69,13 @@ async function verify() {
   try {
     const data = await api<{
       token: string
+      browseSessionId?: string
     }>('/api/auth/verify', {
       method: 'POST',
       body: JSON.stringify({ email: email.value, code: code.value }),
     })
     setToken(data.token)
+    if (data.browseSessionId) setBrowseSessionId(data.browseSessionId)
     await refreshMe()
     await router.push('/')
   } catch (e) {

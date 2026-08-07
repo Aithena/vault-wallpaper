@@ -57,6 +57,13 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
         ],
       },
       {
+        key: 'users.online',
+        label: '在线会员',
+        path: '/users/online',
+        dataScopeForcedAll: true,
+        buttons: [],
+      },
+      {
         key: 'users.blacklist',
         label: '黑名单管理',
         path: '/users/blacklist',

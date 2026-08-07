@@ -27,6 +27,11 @@ export const router = createRouter({
           component: () => import('../views/users/UsersView.vue'),
         },
         {
+          path: 'users/online',
+          name: 'users-online',
+          component: () => import('../views/users/OnlineUsersView.vue'),
+        },
+        {
           path: 'users/blacklist',
           name: 'users-blacklist',
           component: () => import('../views/users/BlacklistView.vue'),

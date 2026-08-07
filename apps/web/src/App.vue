@@ -46,6 +46,7 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authState, logout, refreshMe } from './lib/auth'
+import { trackPage } from './lib/presence'
 import { loadSitePublic, siteState } from './lib/site'
 
 const router = useRouter()
@@ -55,8 +56,23 @@ onMounted(() => {
   void loadSitePublic()
 })
 
-function onLogout() {
-  logout()
+router.afterEach((to) => {
+  if (!authState.user) return
+  const label =
+    to.name === 'home'
+      ? '壁纸列表'
+      : to.name === 'pricing'
+        ? '会员页'
+        : to.name === 'pay-result'
+          ? '支付结果'
+          : to.name === 'login'
+            ? '登录页'
+            : String(to.name || to.path)
+  void trackPage(to.fullPath, label)
+})
+
+async function onLogout() {
+  await logout()
   void router.push('/')
 }
 </script>
