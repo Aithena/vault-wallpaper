@@ -3,6 +3,7 @@ import {
   writeAiUsage,
   type AiUsageTrigger,
 } from './ai-usage'
+import { safeWriteIntegrationLog } from './integration-logs'
 import {
   getOriginalObject,
   getPreviewObject,
@@ -47,6 +48,13 @@ function extractText(result: unknown): string {
   if (typeof result === 'string') return result
   if (!result || typeof result !== 'object') return ''
   const r = result as Record<string, unknown>
+
+  // Workers AI / Moondream often wraps as { result: { answer: "..." } }
+  if (r.result != null && r.result !== result) {
+    const nested = extractText(r.result)
+    if (nested) return nested
+  }
+
   if (typeof r.response === 'string') return r.response
   if (typeof r.description === 'string') return r.description
   if (typeof r.caption === 'string') return r.caption
@@ -62,6 +70,26 @@ function extractText(result: unknown): string {
   return JSON.stringify(result)
 }
 
+function asSuggestion(obj: Record<string, unknown>): AiJsonSuggestion | null {
+  if (
+    typeof obj.title === 'string' ||
+    typeof obj.description === 'string' ||
+    typeof obj.category === 'string' ||
+    Array.isArray(obj.tags)
+  ) {
+    return {
+      title: typeof obj.title === 'string' ? obj.title : undefined,
+      description:
+        typeof obj.description === 'string' ? obj.description : undefined,
+      category: typeof obj.category === 'string' ? obj.category : undefined,
+      tags: Array.isArray(obj.tags)
+        ? obj.tags.filter((t): t is string => typeof t === 'string')
+        : undefined,
+    }
+  }
+  return null
+}
+
 function parseJsonObject(text: string): AiJsonSuggestion | null {
   const trimmed = text.trim()
   const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
@@ -70,7 +98,24 @@ function parseJsonObject(text: string): AiJsonSuggestion | null {
   const end = raw.lastIndexOf('}')
   if (start < 0 || end <= start) return null
   try {
-    return JSON.parse(raw.slice(start, end + 1)) as AiJsonSuggestion
+    const obj = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>
+
+    // Double-encoded: { answer: "{...}" } or { result: { answer: "{...}" } }
+    if (typeof obj.answer === 'string') {
+      const inner = parseJsonObject(obj.answer)
+      if (inner) return inner
+    }
+    if (obj.result && typeof obj.result === 'object') {
+      const res = obj.result as Record<string, unknown>
+      if (typeof res.answer === 'string') {
+        const inner = parseJsonObject(res.answer)
+        if (inner) return inner
+      }
+      const nested = asSuggestion(res)
+      if (nested) return nested
+    }
+
+    return asSuggestion(obj)
   } catch {
     return null
   }
@@ -217,25 +262,60 @@ export async function analyzeWallpaperAi(
   const question = [
     'You are classifying a wallpaper image for a wallpaper membership site.',
     'Reply with ONLY a JSON object (no markdown) using this shape:',
-    '{"title":"short Chinese title","description":"1-2 Chinese sentences describing the image","category":"one category name","tags":["tag",...]}',
-    `Categories (pick exactly one name from this list): ${JSON.stringify(catNames)}`,
-    `Tags (pick 0-5 names from this list only): ${JSON.stringify(tagNames)}`,
+    '{"title":"...","description":"...","category":"...","tags":["...",...]}',
+    'title: short real Chinese title for this image (never copy placeholder text).',
+    'description: 1-2 Chinese sentences describing what is in the image.',
+    `category: pick exactly one name from this list: ${JSON.stringify(catNames)}`,
+    `tags: pick 0-5 names from this list only: ${JSON.stringify(tagNames)}`,
     'If unsure about category, still pick the closest one. Do not invent category/tag names.',
   ].join('\n')
 
   try {
-    const result = await env.AI.run(WALLPAPER_AI_MODEL, {
-      task: 'query',
+    const aiInput = {
+      task: 'query' as const,
       image: image.dataUri,
       question,
       reasoning: false,
       stream: false,
       max_tokens: 512,
       temperature: 0.2,
-    })
+    }
+    const result = await env.AI.run(WALLPAPER_AI_MODEL, aiInput)
 
     const text = extractText(result)
     const parsed = parseJsonObject(text)
+
+    await safeWriteIntegrationLog(env.KV, {
+      provider: 'workers_ai',
+      action: 'wallpaper.query',
+      direction: 'outbound',
+      ok: Boolean(parsed),
+      durationMs: Date.now() - started,
+      refType: 'wallpaper',
+      refId: wp.id,
+      error: parsed ? undefined : 'parse_failed',
+      request: {
+        model: WALLPAPER_AI_MODEL,
+        task: aiInput.task,
+        question: aiInput.question,
+        image: aiInput.image,
+        reasoning: aiInput.reasoning,
+        stream: aiInput.stream,
+        max_tokens: aiInput.max_tokens,
+        temperature: aiInput.temperature,
+        imageSource: image.source,
+        trigger,
+      },
+      response: result,
+      meta: {
+        wallpaperTitle: wp.title,
+        adminId: meta.adminId,
+        adminUsername: meta.adminUsername,
+        extractedText: text.slice(0, 4000),
+        parsed,
+      },
+    })
+
     if (!parsed) {
       await updateWallpaper(env.KV, id, {
         aiStatus: 'failed',
@@ -295,6 +375,28 @@ export async function analyzeWallpaperAi(
     return { ok: true, wallpaper: updated }
   } catch (e) {
     const msg = e instanceof Error ? e.message.slice(0, 200) : 'ai_error'
+    await safeWriteIntegrationLog(env.KV, {
+      provider: 'workers_ai',
+      action: 'wallpaper.query',
+      direction: 'outbound',
+      ok: false,
+      durationMs: Date.now() - started,
+      refType: 'wallpaper',
+      refId: wp.id,
+      error: msg,
+      request: {
+        model: WALLPAPER_AI_MODEL,
+        task: 'query',
+        question,
+        imageSource: image.source,
+        trigger,
+      },
+      meta: {
+        wallpaperTitle: wp.title,
+        adminId: meta.adminId,
+        adminUsername: meta.adminUsername,
+      },
+    })
     await updateWallpaper(env.KV, id, {
       aiStatus: 'failed',
       aiError: msg,

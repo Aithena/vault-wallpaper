@@ -10,13 +10,6 @@
         </div>
         <div class="actions">
           <el-button @click="$router.push('/wallpapers')">返回列表</el-button>
-          <el-button
-            v-if="!isNew && hasButton('wallpapers.list.ai')"
-            :loading="aiRunning"
-            @click="runAi"
-          >
-            重新识别
-          </el-button>
           <el-button type="primary" :loading="saving" @click="save">保存</el-button>
         </div>
       </div>
@@ -28,7 +21,12 @@
               <el-input v-model="form.title" />
             </el-form-item>
             <el-form-item label="描述">
-              <el-input v-model="form.description" type="textarea" :rows="3" placeholder="可来自 AI，审核时可修改" />
+              <el-input
+                v-model="form.description"
+                type="textarea"
+                :rows="3"
+                placeholder="可来自 AI，审核时可修改"
+              />
             </el-form-item>
             <el-form-item v-if="!isNew" label="ID">
               <el-input :model-value="form.id" disabled />
@@ -60,14 +58,77 @@
             <el-form-item label="预览图 URL">
               <el-input v-model="form.previewUrl" placeholder="可手填外链，或下方上传到 R2" />
             </el-form-item>
-            <el-form-item label="预览文件">
-              <input type="file" accept="image/*" @change="onPreviewPick" />
-              <span v-if="previewFile" class="hint">{{ previewFile.name }}</span>
-            </el-form-item>
             <el-form-item label="原图文件" :required="isNew">
-              <input type="file" accept="image/jpeg,image/jpg,.jpg,.jpeg" @change="onOriginalPick" />
-              <span v-if="originalFile" class="hint">{{ originalFile.name }}</span>
-              <span v-else-if="form.hasOriginal" class="hint ok">R2 已有原图</span>
+              <div class="pickers">
+                <el-upload
+                  accept="image/jpeg,image/jpg,.jpg,.jpeg"
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  :disabled="saving"
+                  :on-change="onOriginalChange"
+                >
+                  <div v-if="originalLocalUrl" class="thumb-card">
+                    <img
+                      :src="originalLocalUrl"
+                      alt="original"
+                      class="thumb"
+                      :class="{ blurred: Boolean(originalFile) }"
+                    />
+                    <span v-if="originalFile" class="thumb-mask">待上传</span>
+                  </div>
+                  <div v-else class="thumb-card empty">
+                    <el-icon :size="22"><Plus /></el-icon>
+                    <span>{{ form.hasOriginal ? '更换原图' : '选择原图' }}</span>
+                  </div>
+                </el-upload>
+                <div class="picker-side">
+                  <span v-if="form.hasOriginal && !originalFile" class="hint ok">R2 已有原图</span>
+                  <span v-else-if="originalFile" class="hint">{{ originalFile.name }}</span>
+                  <el-button
+                    v-if="originalFile"
+                    link
+                    type="danger"
+                    :disabled="saving"
+                    @click="clearOriginal"
+                  >
+                    清除
+                  </el-button>
+                </div>
+              </div>
+            </el-form-item>
+            <el-form-item label="预览文件">
+              <div class="pickers">
+                <el-upload
+                  accept="image/*"
+                  :auto-upload="false"
+                  :show-file-list="false"
+                  :disabled="saving"
+                  :on-change="onPreviewChange"
+                >
+                  <div v-if="previewLocalUrl" class="thumb-card">
+                    <img
+                      :src="previewLocalUrl"
+                      alt="preview"
+                      class="thumb"
+                      :class="{ blurred: Boolean(previewFile) }"
+                    />
+                    <span v-if="previewFile" class="thumb-mask">待上传</span>
+                  </div>
+                  <div v-else class="thumb-card empty">
+                    <el-icon :size="22"><Plus /></el-icon>
+                    <span>选择预览</span>
+                  </div>
+                </el-upload>
+                <el-button
+                  v-if="previewFile"
+                  link
+                  type="danger"
+                  :disabled="saving"
+                  @click="clearPreview"
+                >
+                  清除
+                </el-button>
+              </div>
             </el-form-item>
           </el-form>
         </el-col>
@@ -109,6 +170,7 @@
               </el-button>
               <el-button
                 v-if="hasButton('wallpapers.list.ai')"
+                type="danger"
                 :loading="aiRunning"
                 @click="runAi"
               >
@@ -128,9 +190,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
+import type { UploadFile } from 'element-plus'
 import { adminApi, adminUpload, ApiError } from '../../lib/api'
 import { usePermission } from '../../lib/permission'
 
@@ -168,6 +232,8 @@ const categories = ref<TaxItem[]>([])
 const tags = ref<TaxItem[]>([])
 const originalFile = ref<File | null>(null)
 const previewFile = ref<File | null>(null)
+const originalLocalUrl = ref('')
+const previewLocalUrl = ref('')
 
 const form = reactive({
   id: '',
@@ -224,6 +290,46 @@ function tagNames(ids: string[] | undefined) {
     .join('、')
 }
 
+function revokeUrl(url: string) {
+  if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
+function setOriginal(file: File | null) {
+  if (originalLocalUrl.value) revokeUrl(originalLocalUrl.value)
+  originalFile.value = file
+  originalLocalUrl.value = file ? URL.createObjectURL(file) : ''
+}
+
+function setPreview(file: File | null) {
+  if (previewLocalUrl.value) revokeUrl(previewLocalUrl.value)
+  previewFile.value = file
+  previewLocalUrl.value = file ? URL.createObjectURL(file) : ''
+}
+
+function clearOriginal() {
+  setOriginal(null)
+}
+
+function clearPreview() {
+  setPreview(null)
+}
+
+function onOriginalChange(uploadFile: UploadFile) {
+  const raw = uploadFile.raw
+  if (!raw) return
+  if (!/\.jpe?g$/i.test(raw.name) && raw.type !== 'image/jpeg') {
+    ElMessage.warning('原图请选择 jpg')
+    return
+  }
+  setOriginal(raw)
+}
+
+function onPreviewChange(uploadFile: UploadFile) {
+  const raw = uploadFile.raw
+  if (!raw) return
+  setPreview(raw)
+}
+
 function applyWallpaper(w: WallpaperDetail) {
   form.id = w.id
   form.title = w.title
@@ -242,16 +348,10 @@ function applyWallpaper(w: WallpaperDetail) {
   form.aiSuggestedTagIds = w.aiSuggestedTagIds || []
   form.aiError = w.aiError || ''
   form.aiAnalyzedAt = w.aiAnalyzedAt || ''
-}
-
-function onOriginalPick(e: Event) {
-  const input = e.target as HTMLInputElement
-  originalFile.value = input.files?.[0] ?? null
-}
-
-function onPreviewPick(e: Event) {
-  const input = e.target as HTMLInputElement
-  previewFile.value = input.files?.[0] ?? null
+  if (!previewFile.value && w.previewUrl) {
+    if (previewLocalUrl.value) revokeUrl(previewLocalUrl.value)
+    previewLocalUrl.value = w.previewUrl
+  }
 }
 
 async function load() {
@@ -346,15 +446,20 @@ async function save() {
     if (originalFile.value) {
       await adminUpload(`/api/admin/wallpapers/${id}/original`, originalFile.value)
     }
-    if (previewFile.value) {
+    const previewToUpload = previewFile.value || originalFile.value
+    if (previewToUpload) {
       const res = await adminUpload<{ previewUrl: string }>(
         `/api/admin/wallpapers/${id}/preview`,
-        previewFile.value,
+        previewToUpload,
       )
       if (res.previewUrl) form.previewUrl = res.previewUrl
     }
 
-    ElMessage.success(isNew.value ? '已创建，待审核（上传预览后将自动识别）' : '已保存')
+    ElMessage.success(
+      isNew.value
+        ? '已创建，待审核（已写入预览，AI 识别中）'
+        : '已保存',
+    )
     router.push('/wallpapers')
   } catch (e) {
     ElMessage.error(e instanceof ApiError ? e.code : '保存失败')
@@ -364,16 +469,92 @@ async function save() {
 }
 
 onMounted(load)
+
+onBeforeUnmount(() => {
+  if (originalLocalUrl.value) revokeUrl(originalLocalUrl.value)
+  if (previewLocalUrl.value) revokeUrl(previewLocalUrl.value)
+})
 </script>
 
 <style scoped>
 .hint {
-  margin-left: 12px;
+  margin-left: 0;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .hint.ok {
   color: var(--el-color-success);
+}
+.pickers {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.pickers :deep(.el-upload) {
+  display: inline-flex;
+  justify-content: flex-start;
+  width: fit-content;
+  max-width: 100%;
+}
+.picker-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+}
+.thumb-card {
+  position: relative;
+  width: min(280px, 100%);
+  max-width: 100%;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--el-fill-color-light);
+  cursor: pointer;
+  line-height: 0;
+  margin: 0;
+}
+.thumb-card.empty {
+  width: 148px;
+  height: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.2;
+}
+.thumb-card.empty:hover {
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+}
+.thumb {
+  width: 100%;
+  height: auto;
+  display: block;
+  vertical-align: top;
+  transition: filter 0.35s ease;
+}
+.thumb.blurred {
+  filter: blur(12px) saturate(1.05);
+}
+.thumb-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  line-height: 1.2;
 }
 .ai-panel {
   padding: 16px;
@@ -421,11 +602,12 @@ onMounted(load)
   border: 1px solid var(--el-border-color);
   border-radius: 8px;
   overflow: hidden;
+  background: var(--el-fill-color-light);
+  line-height: 0;
 }
 .preview-box img {
   display: block;
   width: 100%;
-  max-height: 280px;
-  object-fit: cover;
+  height: auto;
 }
 </style>

@@ -19,12 +19,22 @@
 
       <el-form label-width="100px" style="max-width: 720px; margin-bottom: 18px">
         <el-form-item label="选择文件">
-          <input
-            type="file"
-            accept="image/jpeg,image/jpg,.jpg,.jpeg"
+          <el-upload
             multiple
-            @change="onPick"
-          />
+            accept="image/jpeg,image/jpg,.jpg,.jpeg"
+            :auto-upload="false"
+            :show-file-list="false"
+            :disabled="uploading"
+            :on-change="onUploadChange"
+          >
+            <el-button type="primary" :disabled="uploading">
+              <el-icon class="btn-icon"><Upload /></el-icon>
+              选择 jpg 图片
+            </el-button>
+            <template #tip>
+              <div class="el-upload__tip">仅支持 jpg / jpeg，可多选</div>
+            </template>
+          </el-upload>
         </el-form-item>
         <el-form-item label="默认档位">
           <el-select v-model="defaults.tierRequired" style="width: 100%">
@@ -56,24 +66,19 @@
         </el-form-item>
       </el-form>
 
-      <el-table :data="rows" stripe border max-height="480">
-        <el-table-column label="文件" min-width="160">
-          <template #default="{ row }">{{ row.fileName }}</template>
-        </el-table-column>
-        <el-table-column label="标题" min-width="160">
-          <template #default="{ row }">
-            <el-input v-model="row.title" size="small" :disabled="row.status === 'done'" />
-          </template>
-        </el-table-column>
-        <el-table-column label="ID" min-width="160">
-          <template #default="{ row }">{{ row.id || '（上传后生成）' }}</template>
-        </el-table-column>
-        <el-table-column label="尺寸" width="120">
-          <template #default="{ row }">{{ row.width }}×{{ row.height }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }">
+      <div v-if="rows.length" class="batch-grid">
+        <div v-for="(row, index) in rows" :key="row.key" class="batch-card">
+          <div class="thumb-wrap">
+            <img
+              :src="row.previewUrl"
+              :alt="row.fileName"
+              class="thumb"
+              :class="{ blurred: row.status === 'pending' || row.status === 'uploading' }"
+            />
+            <div v-if="row.status === 'pending'" class="thumb-mask">待上传</div>
+            <div v-else-if="row.status === 'uploading'" class="thumb-mask">上传中…</div>
             <el-tag
+              class="status-tag"
               size="small"
               :type="
                 row.status === 'done'
@@ -87,32 +92,41 @@
             >
               {{ statusLabel(row.status) }}
             </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="说明" min-width="160">
-          <template #default="{ row }">{{ row.message || '—' }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="80">
-          <template #default="{ row, $index }">
-            <el-button
-              link
-              type="danger"
-              :disabled="uploading || row.status === 'uploading'"
-              @click="rows.splice($index, 1)"
-            >
-              移除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+          </div>
+          <el-input
+            v-model="row.title"
+            size="small"
+            :disabled="row.status === 'done' || uploading"
+            placeholder="标题"
+          />
+          <div class="meta">
+            <span>{{ row.width }}×{{ row.height }}</span>
+            <span class="file">{{ row.fileName }}</span>
+          </div>
+          <div class="meta id-line">{{ row.id || 'ID 上传后生成' }}</div>
+          <p v-if="row.message" class="msg">{{ row.message }}</p>
+          <el-button
+            link
+            type="danger"
+            size="small"
+            :disabled="uploading || row.status === 'uploading'"
+            @click="removeRow(index)"
+          >
+            移除
+          </el-button>
+        </div>
+      </div>
+      <el-empty v-else description="尚未选择图片" :image-size="80" />
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Upload } from '@element-plus/icons-vue'
+import type { UploadFile, UploadFiles } from 'element-plus'
 import { adminApi, adminUpload, ApiError } from '../../lib/api'
 
 type TaxItem = { id: string; name: string }
@@ -120,8 +134,10 @@ type TaxItem = { id: string; name: string }
 type RowStatus = 'pending' | 'uploading' | 'done' | 'error'
 
 type UploadRow = {
+  key: string
   file: File
   fileName: string
+  previewUrl: string
   id: string
   title: string
   width: number
@@ -136,6 +152,7 @@ const uploading = ref(false)
 const categories = ref<TaxItem[]>([])
 const tags = ref<TaxItem[]>([])
 const rows = ref<UploadRow[]>([])
+const seenFiles = new WeakSet<File>()
 
 const defaults = reactive({
   tierRequired: 'free',
@@ -161,12 +178,19 @@ function titleFromName(name: string) {
   return name.replace(/\.[^.]+$/, '') || name
 }
 
+function isJpeg(file: File) {
+  return /\.jpe?g$/i.test(file.name) || file.type === 'image/jpeg'
+}
+
 function readImageSize(file: File): Promise<{ width: number; height: number } | null> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
     img.onload = () => {
-      resolve({ width: img.naturalWidth || defaults.width, height: img.naturalHeight || defaults.height })
+      resolve({
+        width: img.naturalWidth || defaults.width,
+        height: img.naturalHeight || defaults.height,
+      })
       URL.revokeObjectURL(url)
     }
     img.onerror = () => {
@@ -177,21 +201,22 @@ function readImageSize(file: File): Promise<{ width: number; height: number } | 
   })
 }
 
-async function onPick(e: Event) {
-  const input = e.target as HTMLInputElement
-  const files = Array.from(input.files || []).filter((f) =>
-    /\.jpe?g$/i.test(f.name) || f.type === 'image/jpeg',
-  )
-  if (!files.length) {
+async function appendFiles(files: File[]) {
+  const jpgs = files.filter(isJpeg)
+  if (!jpgs.length) {
     ElMessage.warning('请选择 jpg 文件')
     return
   }
   const next: UploadRow[] = []
-  for (const file of files) {
+  for (const file of jpgs) {
+    if (seenFiles.has(file)) continue
+    seenFiles.add(file)
     const size = await readImageSize(file)
     next.push({
+      key: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
       file,
       fileName: file.name,
+      previewUrl: URL.createObjectURL(file),
       id: '',
       title: titleFromName(file.name),
       width: size?.width || defaults.width,
@@ -200,8 +225,19 @@ async function onPick(e: Event) {
       message: '',
     })
   }
-  rows.value = [...rows.value, ...next]
-  input.value = ''
+  if (next.length) rows.value = [...rows.value, ...next]
+}
+
+function onUploadChange(uploadFile: UploadFile, _fileList: UploadFiles) {
+  const raw = uploadFile.raw
+  if (!raw) return
+  void appendFiles([raw])
+}
+
+function removeRow(index: number) {
+  const row = rows.value[index]
+  if (row?.previewUrl) URL.revokeObjectURL(row.previewUrl)
+  rows.value.splice(index, 1)
 }
 
 async function loadTax() {
@@ -277,6 +313,12 @@ async function startUpload() {
 }
 
 onMounted(loadTax)
+
+onBeforeUnmount(() => {
+  for (const row of rows.value) {
+    if (row.previewUrl) URL.revokeObjectURL(row.previewUrl)
+  }
+})
 </script>
 
 <style scoped>
@@ -284,5 +326,78 @@ onMounted(loadTax)
   margin-left: 12px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.btn-icon {
+  margin-right: 6px;
+}
+.batch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+.batch-card {
+  border: 1px solid var(--el-border-color);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--el-fill-color-blank);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.thumb-wrap {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--el-fill-color-light);
+  line-height: 0;
+}
+.thumb {
+  width: 100%;
+  height: auto;
+  display: block;
+  transition: filter 0.35s ease;
+}
+.thumb.blurred {
+  filter: blur(14px) saturate(1.05);
+}
+.thumb-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.status-tag {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.meta .file {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+.id-line {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.msg {
+  margin: 0;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  line-height: 1.4;
+  min-height: 1.4em;
 }
 </style>

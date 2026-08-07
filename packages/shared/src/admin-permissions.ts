@@ -248,6 +248,13 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
         buttons: [],
       },
       {
+        key: 'tools.integration_logs',
+        label: '第三方接口日志',
+        path: '/tools/integration-logs',
+        dataScopeForcedAll: true,
+        buttons: [],
+      },
+      {
         key: 'tools.ai_usage',
         label: 'AI 使用统计',
         path: '/tools/ai-usage',

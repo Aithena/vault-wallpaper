@@ -11,6 +11,7 @@ import { activateMembership, getUser } from '../lib/users'
 import { generateOrderId } from '../lib/order-id'
 import { xunhuHash } from '../lib/xunhupay'
 import type { OrderRecord } from '../lib/orders'
+import { safeWriteIntegrationLog } from '../lib/integration-logs'
 
 export const payRoutes = new Hono<AppEnv>()
 
@@ -121,6 +122,26 @@ payRoutes.post('/create', async (c) => {
   }
   params.hash = await xunhuHash(params, secret)
 
+  await safeWriteIntegrationLog(c.env.KV, {
+    provider: 'xunhupay',
+    action: 'payment.create',
+    direction: 'outbound',
+    ok: true,
+    refType: 'order',
+    refId: orderId,
+    request: {
+      gateway: `${gateway}/payment/do.html`,
+      params,
+    },
+    response: {
+      mode: 'xunhupay',
+      orderId,
+      totalFee,
+      tier,
+    },
+    meta: { userId: session.sub },
+  })
+
   return c.json({
     ok: true,
     mode: 'xunhupay',
@@ -186,8 +207,20 @@ payRoutes.get('/order/:id', async (c) => {
 
 /** 虎皮椒异步回调：验签后开通会员，返回 success */
 payRoutes.post('/notify', async (c) => {
+  const started = Date.now()
   const secret = c.env.XUNHUPAY_APPSECRET
-  if (!secret) return c.text('fail', 500)
+  if (!secret) {
+    await safeWriteIntegrationLog(c.env.KV, {
+      provider: 'xunhupay',
+      action: 'payment.notify',
+      direction: 'inbound',
+      ok: false,
+      durationMs: Date.now() - started,
+      error: 'missing_secret',
+      response: 'fail',
+    })
+    return c.text('fail', 500)
+  }
 
   const form = await c.req.parseBody()
   const params: Record<string, string> = {}
@@ -198,22 +231,88 @@ payRoutes.post('/notify', async (c) => {
   const hash = params.hash
   const expected = await xunhuHash(params, secret)
   if (!hash || hash !== expected) {
+    await safeWriteIntegrationLog(c.env.KV, {
+      provider: 'xunhupay',
+      action: 'payment.notify',
+      direction: 'inbound',
+      ok: false,
+      durationMs: Date.now() - started,
+      refType: 'order',
+      refId: params.trade_order_id,
+      error: 'bad_hash',
+      request: params,
+      response: 'fail',
+    })
     return c.text('fail', 400)
   }
 
   const orderId = params.trade_order_id
   const status = params.status
-  if (!orderId) return c.text('fail', 400)
+  if (!orderId) {
+    await safeWriteIntegrationLog(c.env.KV, {
+      provider: 'xunhupay',
+      action: 'payment.notify',
+      direction: 'inbound',
+      ok: false,
+      durationMs: Date.now() - started,
+      error: 'missing_order_id',
+      request: params,
+      response: 'fail',
+    })
+    return c.text('fail', 400)
+  }
 
   const raw = await c.env.KV.get(`order:${orderId}`)
-  if (!raw) return c.text('success') // idempotent ack
+  if (!raw) {
+    await safeWriteIntegrationLog(c.env.KV, {
+      provider: 'xunhupay',
+      action: 'payment.notify',
+      direction: 'inbound',
+      ok: true,
+      durationMs: Date.now() - started,
+      refType: 'order',
+      refId: orderId,
+      request: params,
+      response: 'success',
+      meta: { note: 'order_not_found_ack' },
+    })
+    return c.text('success') // idempotent ack
+  }
 
   const order = JSON.parse(raw) as OrderRecord
-  if (order.status === ORDER_STATUS.paid) return c.text('success')
+  if (order.status === ORDER_STATUS.paid) {
+    await safeWriteIntegrationLog(c.env.KV, {
+      provider: 'xunhupay',
+      action: 'payment.notify',
+      direction: 'inbound',
+      ok: true,
+      durationMs: Date.now() - started,
+      refType: 'order',
+      refId: orderId,
+      request: params,
+      response: 'success',
+      meta: { note: 'already_paid' },
+    })
+    return c.text('success')
+  }
 
   // 虎皮椒：OD = 已支付
   if (status === 'OD' || status === 'paid') {
-    if (!isMembershipTierId(order.tier)) return c.text('fail', 400)
+    if (!isMembershipTierId(order.tier)) {
+      await safeWriteIntegrationLog(c.env.KV, {
+        provider: 'xunhupay',
+        action: 'payment.notify',
+        direction: 'inbound',
+        ok: false,
+        durationMs: Date.now() - started,
+        refType: 'order',
+        refId: orderId,
+        error: 'invalid_tier',
+        request: params,
+        response: 'fail',
+      })
+      return c.text('fail', 400)
+    }
     order.status = ORDER_STATUS.paid
     order.paidAt = new Date().toISOString()
     order.callbackAt = new Date().toISOString()
@@ -226,6 +325,19 @@ payRoutes.post('/notify', async (c) => {
     order.callbackPayload = params
     await c.env.KV.put(`order:${orderId}`, JSON.stringify(order))
   }
+
+  await safeWriteIntegrationLog(c.env.KV, {
+    provider: 'xunhupay',
+    action: 'payment.notify',
+    direction: 'inbound',
+    ok: true,
+    durationMs: Date.now() - started,
+    refType: 'order',
+    refId: orderId,
+    request: params,
+    response: 'success',
+    meta: { notifyStatus: status, orderStatus: order.status },
+  })
 
   return c.text('success')
 })

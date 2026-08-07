@@ -1,5 +1,7 @@
 /** Email verification code helpers + Google-like HTML template. */
 
+import { safeWriteIntegrationLog } from './integration-logs'
+
 const CODE_TTL_SECONDS = 60 * 5
 const SEND_COOLDOWN_SECONDS = 60
 
@@ -182,6 +184,7 @@ export function buildLoginCodeEmail(code: string, meta: LoginMeta): {
 
 export async function sendEmailCode(
   env: {
+    KV?: KVNamespace
     RESEND_API_KEY?: string
     EMAIL_FROM?: string
     APP_NAME: string
@@ -198,27 +201,71 @@ export async function sendEmailCode(
 
   const content = buildLoginCodeEmail(code, { ...meta, email })
   const from = env.EMAIL_FROM || 'onboarding@resend.dev'
+  const body = {
+    from,
+    to: [email],
+    subject: content.subject,
+    text: content.text,
+    html: content.html,
+  }
+  const started = Date.now()
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${env.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      from,
-      to: [email],
-      subject: content.subject,
-      text: content.text,
-      html: content.html,
-    }),
+    body: JSON.stringify(body),
   })
 
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`email_send_failed: ${res.status} ${text}`)
+  const responseText = await res.text()
+  let responseJson: unknown = responseText
+  try {
+    responseJson = JSON.parse(responseText)
+  } catch {
+    /* keep text */
   }
 
-  const payload = (await res.json().catch(() => ({}))) as { id?: string }
+  const logRequest = {
+    url: 'https://api.resend.com/emails',
+    method: 'POST',
+    from,
+    to: [email],
+    subject: content.subject,
+    text: content.text.split(code).join('[code]'),
+    html: '[omitted]',
+  }
+
+  if (!res.ok) {
+    await safeWriteIntegrationLog(env.KV, {
+      provider: 'resend',
+      action: 'emails.send',
+      ok: false,
+      durationMs: Date.now() - started,
+      refType: 'email',
+      refId: email,
+      error: `email_send_failed: ${res.status}`,
+      request: logRequest,
+      response: { status: res.status, body: responseJson },
+    })
+    throw new Error(`email_send_failed: ${res.status} ${responseText}`)
+  }
+
+  const payload = (typeof responseJson === 'object' && responseJson
+    ? responseJson
+    : {}) as { id?: string }
+
+  await safeWriteIntegrationLog(env.KV, {
+    provider: 'resend',
+    action: 'emails.send',
+    ok: true,
+    durationMs: Date.now() - started,
+    refType: 'email',
+    refId: email,
+    request: logRequest,
+    response: { status: res.status, body: responseJson },
+  })
+
   console.log(`[resend] to=${email} id=${payload.id || 'unknown'}`)
   return { delivered: true, id: payload.id }
 }
