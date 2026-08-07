@@ -23,11 +23,13 @@ import {
   updateWallpaper,
   type WallpaperStatus,
 } from '../lib/wallpaper-catalog'
+import { migrateWallpaperIdsIfNeeded } from '../lib/migrate-wallpaper-ids'
 import {
   headOriginal,
   previewApiPath,
   putOriginal,
   putPreview,
+  deleteWallpaperObjects,
 } from '../lib/r2-wallpaper'
 import { assertOwned, filterOwned, getActorScope } from '../lib/admin-scope'
 import { paginate, parsePageQuery } from '../lib/paging'
@@ -45,8 +47,9 @@ function asUploadFile(value: unknown): File | null {
   return null
 }
 
-async function loadMaps(kv: KVNamespace) {
+async function loadMaps(kv: KVNamespace, r2?: R2Bucket) {
   await ensureSeedCatalog(kv)
+  await migrateWallpaperIdsIfNeeded(kv, r2)
   const [wallpapers, categories, tags] = await Promise.all([
     listWallpapers(kv),
     listCategories(kv),
@@ -73,7 +76,7 @@ adminWallpapersRoutes.get('/', async (c) => {
   const denied = await requireMenu(c, 'wallpapers.list')
   if (denied) return denied
   const { admin, scope } = await getActorScope(c)
-  const { wallpapers, catMap, tagMap } = await loadMaps(c.env.KV)
+  const { wallpapers, catMap, tagMap } = await loadMaps(c.env.KV, c.env.R2)
   const scoped = filterOwned(wallpapers, scope, admin.id)
   const q = c.req.query('q')?.trim().toLowerCase()
   const status = c.req.query('status')?.trim()
@@ -109,7 +112,7 @@ adminWallpapersRoutes.get('/taxonomy', async (c) => {
   const denied = await requireMenu(c, 'wallpapers.list')
   if (denied) return denied
   const { admin, scope } = await getActorScope(c)
-  const { wallpapers, categories, tags } = await loadMaps(c.env.KV)
+  const { wallpapers, categories, tags } = await loadMaps(c.env.KV, c.env.R2)
   const scopedWp = filterOwned(wallpapers, scope, admin.id)
   const scopedCats = filterOwned(categories, scope, admin.id)
   const scopedTags = filterOwned(tags, scope, admin.id)
@@ -129,7 +132,7 @@ adminWallpapersRoutes.get('/categories', async (c) => {
   const denied = await requireMenu(c, 'wallpapers.categories')
   if (denied) return denied
   const { admin, scope } = await getActorScope(c)
-  const { wallpapers, categories } = await loadMaps(c.env.KV)
+  const { wallpapers, categories } = await loadMaps(c.env.KV, c.env.R2)
   const scopedWp = filterOwned(wallpapers, scope, admin.id)
   const scopedCats = filterOwned(categories, scope, admin.id)
   return c.json({
@@ -219,7 +222,7 @@ adminWallpapersRoutes.get('/tags', async (c) => {
   const denied = await requireMenu(c, 'wallpapers.tags')
   if (denied) return denied
   const { admin, scope } = await getActorScope(c)
-  const { wallpapers, tags } = await loadMaps(c.env.KV)
+  const { wallpapers, tags } = await loadMaps(c.env.KV, c.env.R2)
   const scopedWp = filterOwned(wallpapers, scope, admin.id)
   const scopedTags = filterOwned(tags, scope, admin.id)
   return c.json({
@@ -306,7 +309,6 @@ adminWallpapersRoutes.post('/', async (c) => {
   const denied = await requireButton(c, 'wallpapers.list.upload')
   if (denied) return denied
   const body = (await c.req.json().catch(() => ({}))) as {
-    id?: string
     title?: string
     previewUrl?: string
     width?: number
@@ -316,23 +318,16 @@ adminWallpapersRoutes.post('/', async (c) => {
     tagIds?: string[]
     hasOriginal?: boolean
   }
-  if (!body.id?.trim() || !body.title?.trim() || !body.tierRequired) {
+  if (!body.title?.trim() || !body.tierRequired) {
     return c.json({ error: 'invalid_payload' }, 400)
   }
   if (!isMembershipTierId(body.tierRequired)) {
     return c.json({ error: 'invalid_tier' }, 400)
   }
   await ensureSeedCatalog(c.env.KV)
-  const existing = await getWallpaper(c.env.KV, body.id.trim())
-  if (existing && !existing.deletedAt) {
-    return c.json({ error: 'id_exists' }, 409)
-  }
-  const id = body.id.trim()
-  const hasOriginal =
-    Boolean(body.hasOriginal) || (await headOriginal(c.env.R2, id))
+  await migrateWallpaperIdsIfNeeded(c.env.KV, c.env.R2)
   const admin = c.get('admin')!
   const wp = await createWallpaper(c.env.KV, {
-    id,
     title: body.title,
     previewUrl: body.previewUrl || '',
     width: body.width || 3840,
@@ -340,7 +335,7 @@ adminWallpapersRoutes.post('/', async (c) => {
     tierRequired: body.tierRequired as MembershipTierId,
     categoryId: body.categoryId ?? null,
     tagIds: body.tagIds ?? [],
-    hasOriginal,
+    hasOriginal: Boolean(body.hasOriginal),
     createdByAdminId: admin.id,
   })
   await writeAudit(c.env.KV, {
@@ -407,6 +402,7 @@ adminWallpapersRoutes.post('/batch', async (c) => {
       results.push({ id, ok: true })
     } else if (body.action === 'delete') {
       await softDeleteWallpaper(c.env.KV, id)
+      await deleteWallpaperObjects(c.env.R2, id)
       results.push({ id, ok: true })
     } else if (body.action === 'set_category') {
       await updateWallpaper(c.env.KV, id, {
@@ -436,7 +432,7 @@ adminWallpapersRoutes.get('/:id', async (c) => {
   const denied = await requireMenu(c, 'wallpapers.list')
   if (denied) return denied
   const { admin, scope } = await getActorScope(c)
-  const { catMap, tagMap } = await loadMaps(c.env.KV)
+  const { catMap, tagMap } = await loadMaps(c.env.KV, c.env.R2)
   const wp = await getWallpaper(c.env.KV, c.req.param('id'))
   if (!wp || wp.deletedAt) return c.json({ error: 'not_found' }, 404)
   if (!assertOwned(scope, admin.id, wp.createdByAdminId)) {
@@ -718,6 +714,7 @@ adminWallpapersRoutes.delete('/:id', async (c) => {
   }
   const wp = await softDeleteWallpaper(c.env.KV, c.req.param('id'))
   if (!wp) return c.json({ error: 'not_found' }, 404)
+  await deleteWallpaperObjects(c.env.R2, wp.id)
   await writeAudit(c.env.KV, {
     adminId: admin.id,
     adminUsername: admin.username,

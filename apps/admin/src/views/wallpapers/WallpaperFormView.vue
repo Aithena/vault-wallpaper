@@ -5,7 +5,7 @@
         <div>
           <h1>{{ isNew ? '上传壁纸' : `编辑壁纸 · ${form.id}` }}</h1>
           <p class="sub">
-            入库默认为待审核。上传预览后会异步触发 Workers AI；审核时确认描述、分类与标签后再通过。
+            入库默认为待审核。ID 由系统自动生成。上传预览后会异步触发 Workers AI；审核时确认描述、分类与标签后再通过。
           </p>
         </div>
         <div class="actions">
@@ -30,8 +30,8 @@
             <el-form-item label="描述">
               <el-input v-model="form.description" type="textarea" :rows="3" placeholder="可来自 AI，审核时可修改" />
             </el-form-item>
-            <el-form-item label="ID" required>
-              <el-input v-model="form.id" :disabled="!isNew" placeholder="如 wp-aurora" />
+            <el-form-item v-if="!isNew" label="ID">
+              <el-input :model-value="form.id" disabled />
             </el-form-item>
             <el-form-item label="所需档位">
               <el-select v-model="form.tierRequired" style="width: 100%">
@@ -305,8 +305,8 @@ function applyAi() {
 }
 
 async function save() {
-  if (!form.id.trim() || !form.title.trim()) {
-    ElMessage.warning('请填写 ID 与标题')
+  if (!form.title.trim()) {
+    ElMessage.warning('请填写标题')
     return
   }
   if (isNew.value && !originalFile.value) {
@@ -315,9 +315,7 @@ async function save() {
   }
   saving.value = true
   try {
-    const id = form.id.trim()
     const payload = {
-      id,
       title: form.title,
       description: form.description,
       tierRequired: form.tierRequired,
@@ -327,11 +325,17 @@ async function save() {
       height: form.height,
       previewUrl: form.previewUrl,
     }
+    let id = form.id.trim()
     if (isNew.value) {
-      await adminApi('/api/admin/wallpapers', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
+      const created = await adminApi<{ wallpaper: WallpaperDetail }>(
+        '/api/admin/wallpapers',
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        },
+      )
+      id = created.wallpaper.id
+      form.id = id
     } else {
       await adminApi(`/api/admin/wallpapers/${id}`, {
         method: 'PATCH',

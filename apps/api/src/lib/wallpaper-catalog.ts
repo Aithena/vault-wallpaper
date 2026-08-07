@@ -1,4 +1,5 @@
 import type { MembershipTierId } from '@vault/shared'
+import { newWallpaperId } from './wallpaper-id'
 
 export type WallpaperStatus =
   | 'pending'
@@ -160,7 +161,7 @@ export async function ensureSeedCatalog(kv: KVNamespace): Promise<void> {
 
   const seeds: WallpaperRecord[] = [
     {
-      id: 'wp-aurora',
+      id: newWallpaperId(),
       title: '极光山脊',
       previewUrl: 'https://picsum.photos/seed/vault-aurora/640/360',
       width: 3840,
@@ -174,7 +175,7 @@ export async function ensureSeedCatalog(kv: KVNamespace): Promise<void> {
       updatedAt: now,
     },
     {
-      id: 'wp-harbor',
+      id: newWallpaperId(),
       title: '雾港清晨',
       previewUrl: 'https://picsum.photos/seed/vault-harbor/640/360',
       width: 3840,
@@ -188,7 +189,7 @@ export async function ensureSeedCatalog(kv: KVNamespace): Promise<void> {
       updatedAt: now,
     },
     {
-      id: 'wp-neon',
+      id: newWallpaperId(),
       title: '夜城霓虹',
       previewUrl: 'https://picsum.photos/seed/vault-neon/640/360',
       width: 3840,
@@ -318,12 +319,17 @@ export async function createWallpaper(
   kv: KVNamespace,
   input: Omit<
     WallpaperRecord,
-    'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'hasOriginal'
-  > & { hasOriginal?: boolean },
+    'id' | 'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'hasOriginal'
+  > & { id?: string; hasOriginal?: boolean },
 ): Promise<WallpaperRecord> {
   const now = new Date().toISOString()
+  let id = input.id?.trim() || newWallpaperId()
+  while (await getWallpaper(kv, id)) {
+    id = newWallpaperId()
+  }
   const record: WallpaperRecord = {
     ...input,
+    id,
     title: input.title.trim(),
     status: 'pending',
     hasOriginal: Boolean(input.hasOriginal),

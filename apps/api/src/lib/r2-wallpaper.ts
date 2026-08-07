@@ -53,6 +53,15 @@ export async function getOriginalObject(r2: R2Bucket | undefined, id: string) {
   return r2.get(originalKey(id))
 }
 
+/** Delete original + preview objects from R2 (missing keys are ignored). */
+export async function deleteWallpaperObjects(
+  r2: R2Bucket | undefined,
+  id: string,
+): Promise<void> {
+  if (!r2) return
+  await Promise.all([r2.delete(originalKey(id)), r2.delete(previewKey(id))])
+}
+
 /** Public preview URL path served by API. */
 export function previewApiPath(id: string) {
   return `/api/wallpapers/${id}/preview`

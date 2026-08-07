@@ -9,6 +9,7 @@ import {
   listCategories,
   listTags,
 } from '../lib/wallpaper-catalog'
+import { migrateWallpaperIdsIfNeeded } from '../lib/migrate-wallpaper-ids'
 import { getPreviewObject, originalKey } from '../lib/r2-wallpaper'
 import { writeDownload } from '../lib/downloads'
 import { readBearer, verifySession } from '../lib/session'
@@ -20,6 +21,7 @@ export const wallpaperRoutes = new Hono<AppEnv>()
 
 wallpaperRoutes.get('/', async (c) => {
   await ensureSeedCatalog(c.env.KV)
+  await migrateWallpaperIdsIfNeeded(c.env.KV, c.env.R2)
   const [items, cats, tags] = await Promise.all([
     listPublishedWallpapers(c.env.KV),
     listCategories(c.env.KV),
@@ -55,6 +57,7 @@ wallpaperRoutes.get('/:id/preview', async (c) => {
 wallpaperRoutes.get('/:id/download', async (c) => {
   const id = c.req.param('id')
   await ensureSeedCatalog(c.env.KV)
+  await migrateWallpaperIdsIfNeeded(c.env.KV, c.env.R2)
   const item = await getWallpaper(c.env.KV, id)
   if (!item || item.deletedAt || item.status !== 'published') {
     return c.json({ error: 'not_found' }, 404)

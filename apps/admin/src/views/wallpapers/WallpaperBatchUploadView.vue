@@ -5,7 +5,7 @@
         <div>
           <h1>批量上传壁纸</h1>
           <p class="sub">
-            选择多张 jpg 原图；ID 默认取文件名，入库为待审核。开启「同步预览」后会写入
+            选择多张 jpg 原图；ID 由系统自动生成，入库为待审核。开启「同步预览」后会写入
             R2 预览并异步触发 Workers AI（描述 / 建议分类标签），人工审核时确认。
           </p>
         </div>
@@ -60,15 +60,13 @@
         <el-table-column label="文件" min-width="160">
           <template #default="{ row }">{{ row.fileName }}</template>
         </el-table-column>
-        <el-table-column label="ID" min-width="140">
-          <template #default="{ row }">
-            <el-input v-model="row.id" size="small" :disabled="row.status === 'done'" />
-          </template>
-        </el-table-column>
-        <el-table-column label="标题" min-width="140">
+        <el-table-column label="标题" min-width="160">
           <template #default="{ row }">
             <el-input v-model="row.title" size="small" :disabled="row.status === 'done'" />
           </template>
+        </el-table-column>
+        <el-table-column label="ID" min-width="160">
+          <template #default="{ row }">{{ row.id || '（上传后生成）' }}</template>
         </el-table-column>
         <el-table-column label="尺寸" width="120">
           <template #default="{ row }">{{ row.width }}×{{ row.height }}</template>
@@ -159,15 +157,6 @@ function statusLabel(s: RowStatus) {
   )
 }
 
-function slugFromName(name: string) {
-  const base = name.replace(/\.[^.]+$/, '')
-  const slug = base
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return slug || `wp-${Date.now()}`
-}
-
 function titleFromName(name: string) {
   return name.replace(/\.[^.]+$/, '') || name
 }
@@ -203,25 +192,13 @@ async function onPick(e: Event) {
     next.push({
       file,
       fileName: file.name,
-      id: slugFromName(file.name),
+      id: '',
       title: titleFromName(file.name),
       width: size?.width || defaults.width,
       height: size?.height || defaults.height,
       status: 'pending',
       message: '',
     })
-  }
-  // dedupe ids within batch
-  const seen = new Set(rows.value.map((r) => r.id))
-  for (const row of next) {
-    let id = row.id
-    let n = 2
-    while (seen.has(id)) {
-      id = `${row.id}-${n}`
-      n += 1
-    }
-    row.id = id
-    seen.add(id)
   }
   rows.value = [...rows.value, ...next]
   input.value = ''
@@ -249,33 +226,37 @@ async function startUpload() {
   let fail = 0
   for (const row of rows.value) {
     if (row.status === 'done') continue
-    if (!row.id.trim() || !row.title.trim()) {
+    if (!row.title.trim()) {
       row.status = 'error'
-      row.message = 'ID/标题不能为空'
+      row.message = '标题不能为空'
       fail += 1
       continue
     }
     row.status = 'uploading'
     row.message = '创建中…'
     try {
-      await adminApi('/api/admin/wallpapers', {
-        method: 'POST',
-        body: JSON.stringify({
-          id: row.id.trim(),
-          title: row.title.trim(),
-          tierRequired: defaults.tierRequired,
-          categoryId: defaults.categoryId || null,
-          tagIds: defaults.tagIds,
-          width: row.width,
-          height: row.height,
-          previewUrl: '',
-        }),
-      })
+      const created = await adminApi<{ wallpaper: { id: string } }>(
+        '/api/admin/wallpapers',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            title: row.title.trim(),
+            tierRequired: defaults.tierRequired,
+            categoryId: defaults.categoryId || null,
+            tagIds: defaults.tagIds,
+            width: row.width,
+            height: row.height,
+            previewUrl: '',
+          }),
+        },
+      )
+      const id = created.wallpaper.id
+      row.id = id
       row.message = '上传原图…'
-      await adminUpload(`/api/admin/wallpapers/${row.id.trim()}/original`, row.file)
+      await adminUpload(`/api/admin/wallpapers/${id}/original`, row.file)
       if (defaults.useAsPreview) {
         row.message = '上传预览…'
-        await adminUpload(`/api/admin/wallpapers/${row.id.trim()}/preview`, row.file)
+        await adminUpload(`/api/admin/wallpapers/${id}/preview`, row.file)
       }
       row.status = 'done'
       row.message = defaults.useAsPreview

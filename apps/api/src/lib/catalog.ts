@@ -4,33 +4,8 @@ import {
   type WallpaperPublic,
 } from '@vault/shared'
 
-/** Seed catalog for local experiment before admin upload exists. */
-export const SEED_WALLPAPERS: WallpaperPublic[] = [
-  {
-    id: 'wp-aurora',
-    title: '极光山脊',
-    previewUrl: 'https://picsum.photos/seed/vault-aurora/640/360',
-    width: 3840,
-    height: 2160,
-    tierRequired: 'free',
-  },
-  {
-    id: 'wp-harbor',
-    title: '雾港清晨',
-    previewUrl: 'https://picsum.photos/seed/vault-harbor/640/360',
-    width: 3840,
-    height: 2160,
-    tierRequired: 'pro',
-  },
-  {
-    id: 'wp-neon',
-    title: '夜城霓虹',
-    previewUrl: 'https://picsum.photos/seed/vault-neon/640/360',
-    width: 3840,
-    height: 2160,
-    tierRequired: 'max',
-  },
-]
+/** @deprecated Prefer KV catalog; kept for tier helpers only. */
+export const SEED_WALLPAPERS: WallpaperPublic[] = []
 
 const TIER_RANK: Record<MembershipTierId, number> = {
   free: 0,
