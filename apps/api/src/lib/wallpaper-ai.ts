@@ -5,6 +5,10 @@ import {
 } from './ai-usage'
 import { safeWriteIntegrationLog } from './integration-logs'
 import {
+  resolveAiTodosForWallpaper,
+  safeUpsertAdminTodo,
+} from './admin-todos'
+import {
   getOriginalObject,
   getPreviewObject,
 } from './r2-wallpaper'
@@ -238,6 +242,17 @@ export async function analyzeWallpaperAi(
       aiError: image.error,
       aiAnalyzedAt: new Date().toISOString(),
     })
+    await resolveAiTodosForWallpaper(env.KV, wp.id, 'ai_failed')
+    await safeUpsertAdminTodo(env.KV, {
+      type: 'ai_failed',
+      wallpaperId: wp.id,
+      wallpaperTitle: wp.title,
+      createdByAdminId: wp.createdByAdminId,
+      description:
+        image.error === 'preview_required'
+          ? '原图过大，请先上传预览后再识别'
+          : '请补传预览或原图后重新识别',
+    })
     await recordUsage(env, {
       wallpaperId: wp.id,
       wallpaperTitle: wp.title,
@@ -323,6 +338,13 @@ export async function analyzeWallpaperAi(
         aiDescription: text.slice(0, 2000),
         aiAnalyzedAt: new Date().toISOString(),
       })
+      await resolveAiTodosForWallpaper(env.KV, wp.id, 'ai_failed')
+      await safeUpsertAdminTodo(env.KV, {
+        type: 'ai_failed',
+        wallpaperId: wp.id,
+        wallpaperTitle: wp.title,
+        createdByAdminId: wp.createdByAdminId,
+      })
       await recordUsage(env, {
         wallpaperId: wp.id,
         wallpaperTitle: wp.title,
@@ -358,6 +380,14 @@ export async function analyzeWallpaperAi(
       aiSuggestedTagIds: suggestedTagIds,
       aiError: '',
       aiAnalyzedAt: new Date().toISOString(),
+    })
+
+    await resolveAiTodosForWallpaper(env.KV, wp.id, 'ai_ready')
+    await safeUpsertAdminTodo(env.KV, {
+      type: 'ai_ready',
+      wallpaperId: wp.id,
+      wallpaperTitle: wp.title,
+      createdByAdminId: wp.createdByAdminId,
     })
 
     await recordUsage(env, {
@@ -401,6 +431,13 @@ export async function analyzeWallpaperAi(
       aiStatus: 'failed',
       aiError: msg,
       aiAnalyzedAt: new Date().toISOString(),
+    })
+    await resolveAiTodosForWallpaper(env.KV, wp.id, 'ai_failed')
+    await safeUpsertAdminTodo(env.KV, {
+      type: 'ai_failed',
+      wallpaperId: wp.id,
+      wallpaperTitle: wp.title,
+      createdByAdminId: wp.createdByAdminId,
     })
     await recordUsage(env, {
       wallpaperId: wp.id,

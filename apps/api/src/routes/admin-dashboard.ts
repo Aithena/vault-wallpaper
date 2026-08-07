@@ -12,7 +12,14 @@ import {
   ensureSeedCatalog,
   listWallpapers,
 } from '../lib/wallpaper-catalog'
-import { filterOwned, getActorScope } from '../lib/admin-scope'
+import { filterOwned, getActorScope, assertOwned } from '../lib/admin-scope'
+import {
+  ensureAdminTodo,
+  listTodos,
+  markTodoRead,
+  resolveTodosForWallpaper,
+  type AdminTodoRecord,
+} from '../lib/admin-todos'
 
 export const adminDashboardRoutes = new Hono<AppEnv>()
 adminDashboardRoutes.use('*', requireAdmin)
@@ -172,66 +179,139 @@ export type AdminNotificationItem = {
   description: string
   count: number
   path: string
+  wallpaperId?: string
+  createdAt?: string
+  readAt?: string | null
+}
+
+async function reconcileTodosForPending(
+  kv: KVNamespace,
+  pending: { id: string; title: string; createdByAdminId?: string; aiStatus?: string }[],
+) {
+  const pendingIds = new Set(pending.map((w) => w.id))
+  const open = (await listTodos(kv, 2000)).filter((t) => !t.resolvedAt)
+
+  // Resolve todos whose wallpaper is no longer pending
+  for (const t of open) {
+    if (!pendingIds.has(t.wallpaperId)) {
+      await resolveTodosForWallpaper(kv, t.wallpaperId)
+    }
+  }
+
+  // Backfill missing todos without bumping unread
+  for (const w of pending) {
+    await ensureAdminTodo(kv, {
+      type: 'wallpaper_pending',
+      wallpaperId: w.id,
+      wallpaperTitle: w.title,
+      createdByAdminId: w.createdByAdminId,
+    })
+    const ai = w.aiStatus ?? 'idle'
+    if (ai === 'failed') {
+      await ensureAdminTodo(kv, {
+        type: 'ai_failed',
+        wallpaperId: w.id,
+        wallpaperTitle: w.title,
+        createdByAdminId: w.createdByAdminId,
+      })
+    } else if (ai === 'ready') {
+      await ensureAdminTodo(kv, {
+        type: 'ai_ready',
+        wallpaperId: w.id,
+        wallpaperTitle: w.title,
+        createdByAdminId: w.createdByAdminId,
+      })
+    }
+  }
+}
+
+function todoToItem(t: AdminTodoRecord): AdminNotificationItem {
+  return {
+    id: t.id,
+    type: t.type,
+    title: t.title,
+    description: t.description,
+    count: 1,
+    path: t.path,
+    wallpaperId: t.wallpaperId,
+    createdAt: t.createdAt,
+    readAt: t.readAt ?? null,
+  }
 }
 
 adminDashboardRoutes.get('/notifications', async (c) => {
   const { role } = await actorPerms(c)
   const canWallpapers = Boolean(role?.menus.includes('wallpapers.list'))
   if (!canWallpapers) {
-    return c.json({ badge: 0, items: [] as AdminNotificationItem[] })
+    return c.json({ badge: 0, unread: 0, items: [] as AdminNotificationItem[] })
   }
 
   await ensureSeedCatalog(c.env.KV)
   const { admin, scope } = await getActorScope(c)
   const wallpapers = filterOwned(await listWallpapers(c.env.KV), scope, admin.id)
   const pending = wallpapers.filter((w) => w.status === 'pending')
-  const aiFailed = pending.filter((w) => (w.aiStatus ?? 'idle') === 'failed')
-  const aiReady = pending.filter((w) => (w.aiStatus ?? 'idle') === 'ready')
 
-  const items: AdminNotificationItem[] = []
-  if (pending.length > 0) {
-    items.push({
-      id: 'wallpaper_pending',
-      type: 'wallpaper_pending',
-      title: `${pending.length} 张壁纸待审核`,
-      description: '入库后需人工审核通过才会上架',
-      count: pending.length,
-      path: '/wallpapers?status=pending',
-    })
-  }
-  if (aiFailed.length > 0) {
-    const sample = aiFailed
-      .slice(0, 3)
-      .map((w) => w.title || w.id)
-      .join('、')
-    items.push({
-      id: 'ai_failed',
-      type: 'ai_failed',
-      title: `${aiFailed.length} 张 AI 识别失败`,
-      description: sample ? `例如：${sample}` : '请补传预览或重新识别',
-      count: aiFailed.length,
-      path: '/wallpapers?status=pending&aiStatus=failed',
-    })
-  }
-  if (aiReady.length > 0) {
-    const sample = aiReady
-      .slice(0, 3)
-      .map((w) => w.title || w.id)
-      .join('、')
-    items.push({
-      id: 'ai_ready',
-      type: 'ai_ready',
-      title: `${aiReady.length} 张 AI 建议待确认`,
-      description: sample ? `例如：${sample}` : '打开审核确认页采用描述与分类标签',
-      count: aiReady.length,
-      path: '/wallpapers?status=pending&aiStatus=ready',
-    })
-  }
+  await reconcileTodosForPending(c.env.KV, pending)
 
+  const ownedPendingIds = new Set(pending.map((w) => w.id))
+  const todos = (await listTodos(c.env.KV, 500)).filter((t) => {
+    if (t.resolvedAt) return false
+    if (!ownedPendingIds.has(t.wallpaperId)) return false
+    if (scope === 'self' && t.createdByAdminId && t.createdByAdminId !== admin.id) {
+      return false
+    }
+    return !t.readAt
+  })
+
+  const items = todos.slice(0, 50).map(todoToItem)
   const badge = pending.length
-  return c.json({ badge, items, counts: {
-    pending: pending.length,
-    aiFailed: aiFailed.length,
-    aiReady: aiReady.length,
-  } })
+  const aiFailed = pending.filter((w) => (w.aiStatus ?? 'idle') === 'failed').length
+  const aiReady = pending.filter((w) => (w.aiStatus ?? 'idle') === 'ready').length
+
+  return c.json({
+    badge,
+    unread: items.length,
+    items,
+    counts: {
+      pending: pending.length,
+      aiFailed,
+      aiReady,
+    },
+  })
+})
+
+adminDashboardRoutes.post('/notifications/:id/read', async (c) => {
+  const { role } = await actorPerms(c)
+  const canWallpapers = Boolean(role?.menus.includes('wallpapers.list'))
+  if (!canWallpapers) return c.json({ error: 'forbidden' }, 403)
+
+  const { admin, scope } = await getActorScope(c)
+  const todo = await markTodoRead(c.env.KV, c.req.param('id'))
+  if (!todo) return c.json({ error: 'not_found' }, 404)
+  if (!assertOwned(scope, admin.id, todo.createdByAdminId)) {
+    return c.json({ error: 'forbidden_scope' }, 403)
+  }
+  return c.json({ ok: true, item: todoToItem(todo) })
+})
+
+adminDashboardRoutes.post('/notifications/read-all', async (c) => {
+  const { role } = await actorPerms(c)
+  const canWallpapers = Boolean(role?.menus.includes('wallpapers.list'))
+  if (!canWallpapers) return c.json({ error: 'forbidden' }, 403)
+
+  const { admin, scope } = await getActorScope(c)
+  const wallpapers = filterOwned(await listWallpapers(c.env.KV), scope, admin.id)
+  const pendingIds = new Set(
+    wallpapers.filter((w) => w.status === 'pending').map((w) => w.id),
+  )
+  const todos = await listTodos(c.env.KV, 500)
+  let n = 0
+  for (const t of todos) {
+    if (t.resolvedAt || t.readAt) continue
+    if (!pendingIds.has(t.wallpaperId)) continue
+    if (!assertOwned(scope, admin.id, t.createdByAdminId)) continue
+    await markTodoRead(c.env.KV, t.id)
+    n += 1
+  }
+  return c.json({ ok: true, count: n })
 })

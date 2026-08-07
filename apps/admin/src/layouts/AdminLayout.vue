@@ -26,7 +26,21 @@
             </el-badge>
           </template>
           <div class="notif-panel">
-            <div class="notif-head">待办提醒</div>
+            <div class="notif-head">
+              <span>待办提醒</span>
+              <el-button
+                v-if="notifItems.length"
+                link
+                type="primary"
+                size="small"
+                @click.stop="markAllRead"
+              >
+                全部已读
+              </el-button>
+            </div>
+            <p v-if="pendingCount > 0" class="notif-pending">
+              当前仍有 {{ pendingCount }} 张壁纸待审核（角标为未读提醒数）
+            </p>
             <div v-loading="notifLoading" class="notif-body">
               <button
                 v-for="item in notifItems"
@@ -38,7 +52,9 @@
                 <div class="notif-title">{{ item.title }}</div>
                 <div class="notif-desc">{{ item.description }}</div>
               </button>
-              <p v-if="!notifLoading && !notifItems.length" class="notif-empty">暂无待办</p>
+              <p v-if="!notifLoading && !notifItems.length" class="notif-empty">
+                {{ pendingCount > 0 ? '暂无未读提醒，待审事项请到壁纸列表处理' : '暂无待办' }}
+              </p>
             </div>
           </div>
         </el-popover>
@@ -138,27 +154,55 @@ const route = useRoute()
 const router = useRouter()
 const profile = ref(getAdminProfile())
 const notifBadge = ref(0)
+const pendingCount = ref(0)
 const notifItems = ref<NotifItem[]>([])
 const notifLoading = ref(false)
 
 async function loadNotifications() {
   notifLoading.value = true
   try {
-    const data = await adminApi<{ badge: number; items: NotifItem[] }>(
-      '/api/admin/dashboard/notifications',
-    )
-    notifBadge.value = data.badge
+    const data = await adminApi<{
+      badge: number
+      unread?: number
+      items: NotifItem[]
+      counts?: { pending: number }
+    }>('/api/admin/dashboard/notifications')
+    // 角标 = 未读事件提醒；pending 用现算校验展示
+    notifBadge.value = data.unread ?? data.items.length
+    pendingCount.value = data.counts?.pending ?? data.badge ?? 0
     notifItems.value = data.items
   } catch {
     notifBadge.value = 0
+    pendingCount.value = 0
     notifItems.value = []
   } finally {
     notifLoading.value = false
   }
 }
 
-function openNotification(item: NotifItem) {
+async function openNotification(item: NotifItem) {
+  try {
+    await adminApi(`/api/admin/dashboard/notifications/${item.id}/read`, {
+      method: 'POST',
+    })
+  } catch {
+    /* still navigate */
+  }
+  notifItems.value = notifItems.value.filter((x) => x.id !== item.id)
+  notifBadge.value = Math.max(0, notifBadge.value - 1)
   void router.push(item.path)
+}
+
+async function markAllRead() {
+  try {
+    await adminApi('/api/admin/dashboard/notifications/read-all', {
+      method: 'POST',
+    })
+    notifItems.value = []
+    notifBadge.value = 0
+  } catch {
+    /* ignore */
+  }
 }
 
 onMounted(() => {
@@ -353,11 +397,22 @@ function onCommand(cmd: string) {
 }
 
 .notif-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 13px;
   font-weight: 650;
   padding: 4px 8px 10px;
   border-bottom: 1px solid var(--admin-line);
   margin-bottom: 6px;
+}
+
+.notif-pending {
+  margin: 0 8px 8px;
+  font-size: 12px;
+  color: var(--admin-muted);
+  line-height: 1.4;
 }
 
 .notif-body {

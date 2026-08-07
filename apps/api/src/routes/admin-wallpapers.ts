@@ -25,6 +25,10 @@ import {
 } from '../lib/wallpaper-catalog'
 import { migrateWallpaperIdsIfNeeded } from '../lib/migrate-wallpaper-ids'
 import {
+  safeResolveTodosForWallpaper,
+  safeUpsertAdminTodo,
+} from '../lib/admin-todos'
+import {
   headOriginal,
   previewApiPath,
   putOriginal,
@@ -338,6 +342,12 @@ adminWallpapersRoutes.post('/', async (c) => {
     hasOriginal: Boolean(body.hasOriginal),
     createdByAdminId: admin.id,
   })
+  await safeUpsertAdminTodo(c.env.KV, {
+    type: 'wallpaper_pending',
+    wallpaperId: wp.id,
+    wallpaperTitle: wp.title,
+    createdByAdminId: admin.id,
+  })
   await writeAudit(c.env.KV, {
     adminId: admin.id,
     adminUsername: admin.username,
@@ -392,6 +402,7 @@ adminWallpapersRoutes.post('/batch', async (c) => {
         hasOriginal: true,
         rejectReason: '',
       })
+      await safeResolveTodosForWallpaper(c.env.KV, id)
       results.push({ id, ok: true })
     } else if (body.action === 'unpublish') {
       if (existing.status !== 'published') {
@@ -403,6 +414,7 @@ adminWallpapersRoutes.post('/batch', async (c) => {
     } else if (body.action === 'delete') {
       await softDeleteWallpaper(c.env.KV, id)
       await deleteWallpaperObjects(c.env.R2, id)
+      await safeResolveTodosForWallpaper(c.env.KV, id)
       results.push({ id, ok: true })
     } else if (body.action === 'set_category') {
       await updateWallpaper(c.env.KV, id, {
@@ -685,6 +697,17 @@ adminWallpapersRoutes.patch('/:id', async (c) => {
   })
   if (!wp) return c.json({ error: 'not_found' }, 404)
 
+  if (body.status === 'published' || body.status === 'rejected') {
+    await safeResolveTodosForWallpaper(c.env.KV, id)
+  } else if (body.status === 'pending') {
+    await safeUpsertAdminTodo(c.env.KV, {
+      type: 'wallpaper_pending',
+      wallpaperId: wp.id,
+      wallpaperTitle: wp.title,
+      createdByAdminId: wp.createdByAdminId,
+    })
+  }
+
   await writeAudit(c.env.KV, {
     adminId: admin.id,
     adminUsername: admin.username,
@@ -715,6 +738,7 @@ adminWallpapersRoutes.delete('/:id', async (c) => {
   const wp = await softDeleteWallpaper(c.env.KV, c.req.param('id'))
   if (!wp) return c.json({ error: 'not_found' }, 404)
   await deleteWallpaperObjects(c.env.R2, wp.id)
+  await safeResolveTodosForWallpaper(c.env.KV, wp.id)
   await writeAudit(c.env.KV, {
     adminId: admin.id,
     adminUsername: admin.username,
