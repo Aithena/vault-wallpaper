@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types'
 import { requireAdmin } from '../lib/admin-auth'
-import { requireAnyMenu, requireMenu } from '../lib/admin-perm'
+import { requireAnyMenu, requireMenu, actorPerms } from '../lib/admin-perm'
 import { listAudits } from '../lib/audit'
+import { listAiUsage, summarizeAiUsage } from '../lib/ai-usage'
 import { listDownloads } from '../lib/downloads'
 import { listOrders } from '../lib/orders'
 import { isUserMembershipActive, listUsers } from '../lib/users'
@@ -10,6 +11,7 @@ import {
   ensureSeedCatalog,
   listWallpapers,
 } from '../lib/wallpaper-catalog'
+import { filterOwned, getActorScope } from '../lib/admin-scope'
 
 export const adminDashboardRoutes = new Hono<AppEnv>()
 adminDashboardRoutes.use('*', requireAdmin)
@@ -91,12 +93,13 @@ adminDashboardRoutes.get('/overview', async (c) => {
   if (denied) return denied
 
   await ensureSeedCatalog(c.env.KV)
-  const [users, orders, wallpapers, downloads, audits] = await Promise.all([
+  const [users, orders, wallpapers, downloads, audits, aiUsage] = await Promise.all([
     listUsers(c.env.KV),
     listOrders(c.env.KV),
     listWallpapers(c.env.KV),
     listDownloads(c.env.KV, 1000),
     listAudits(c.env.KV, 8),
+    listAiUsage(c.env.KV, 2000),
   ])
 
   const today = todayKey()
@@ -117,6 +120,7 @@ adminDashboardRoutes.get('/overview', async (c) => {
     .reduce((sum, o) => sum + Number(o.totalFee || 0), 0)
 
   const downloadsToday = downloads.filter((d) => dayKey(d.createdAt) === today)
+  const aiSummary = summarizeAiUsage(aiUsage, today)
 
   return c.json({
     overview: {
@@ -136,6 +140,11 @@ adminDashboardRoutes.get('/overview', async (c) => {
       downloadsTotal: downloads.length,
       downloadsToday: downloadsToday.length,
       downloadsSuccessToday: downloadsToday.filter((d) => d.success).length,
+      aiTotal: aiSummary.total,
+      aiToday: aiSummary.todayTotal,
+      aiSuccessToday: aiSummary.todaySuccess,
+      aiFailedToday: aiSummary.todayFailed,
+      aiAvgDurationMs: aiSummary.avgDurationMs,
     },
     recentAudits: audits.map((a) => ({
       id: a.id,
@@ -145,4 +154,75 @@ adminDashboardRoutes.get('/overview', async (c) => {
       target: a.target,
     })),
   })
+})
+
+export type AdminNotificationItem = {
+  id: string
+  type: 'wallpaper_pending' | 'ai_failed' | 'ai_ready'
+  title: string
+  description: string
+  count: number
+  path: string
+}
+
+adminDashboardRoutes.get('/notifications', async (c) => {
+  const { role } = await actorPerms(c)
+  const canWallpapers = Boolean(role?.menus.includes('wallpapers.list'))
+  if (!canWallpapers) {
+    return c.json({ badge: 0, items: [] as AdminNotificationItem[] })
+  }
+
+  await ensureSeedCatalog(c.env.KV)
+  const { admin, scope } = await getActorScope(c)
+  const wallpapers = filterOwned(await listWallpapers(c.env.KV), scope, admin.id)
+  const pending = wallpapers.filter((w) => w.status === 'pending')
+  const aiFailed = pending.filter((w) => (w.aiStatus ?? 'idle') === 'failed')
+  const aiReady = pending.filter((w) => (w.aiStatus ?? 'idle') === 'ready')
+
+  const items: AdminNotificationItem[] = []
+  if (pending.length > 0) {
+    items.push({
+      id: 'wallpaper_pending',
+      type: 'wallpaper_pending',
+      title: `${pending.length} 张壁纸待审核`,
+      description: '入库后需人工审核通过才会上架',
+      count: pending.length,
+      path: '/wallpapers?status=pending',
+    })
+  }
+  if (aiFailed.length > 0) {
+    const sample = aiFailed
+      .slice(0, 3)
+      .map((w) => w.title || w.id)
+      .join('、')
+    items.push({
+      id: 'ai_failed',
+      type: 'ai_failed',
+      title: `${aiFailed.length} 张 AI 识别失败`,
+      description: sample ? `例如：${sample}` : '请补传预览或重新识别',
+      count: aiFailed.length,
+      path: '/wallpapers?status=pending&aiStatus=failed',
+    })
+  }
+  if (aiReady.length > 0) {
+    const sample = aiReady
+      .slice(0, 3)
+      .map((w) => w.title || w.id)
+      .join('、')
+    items.push({
+      id: 'ai_ready',
+      type: 'ai_ready',
+      title: `${aiReady.length} 张 AI 建议待确认`,
+      description: sample ? `例如：${sample}` : '打开审核确认页采用描述与分类标签',
+      count: aiReady.length,
+      path: '/wallpapers?status=pending&aiStatus=ready',
+    })
+  }
+
+  const badge = pending.length
+  return c.json({ badge, items, counts: {
+    pending: pending.length,
+    aiFailed: aiFailed.length,
+    aiReady: aiReady.length,
+  } })
 })

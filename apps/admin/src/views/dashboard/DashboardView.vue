@@ -4,7 +4,7 @@
       <div class="page-toolbar">
         <div>
           <h1>数据总览</h1>
-          <p class="sub">用户、订单、待审壁纸、下载等核心指标。</p>
+          <p class="sub">用户、订单、待审壁纸、下载、AI 调用等核心指标。</p>
         </div>
         <div class="actions">
           <el-button @click="load">刷新</el-button>
@@ -27,6 +27,7 @@
         <el-button @click="$router.push('/users')">用户列表</el-button>
         <el-button @click="$router.push('/orders')">全部订单</el-button>
         <el-button @click="$router.push('/downloads')">下载记录</el-button>
+        <el-button @click="$router.push('/tools/ai-usage')">AI 使用统计</el-button>
         <el-button @click="$router.push('/tools/audit')">操作日志</el-button>
       </el-space>
 
@@ -66,6 +67,11 @@ type Overview = {
   downloadsTotal: number
   downloadsToday: number
   downloadsSuccessToday: number
+  aiTotal: number
+  aiToday: number
+  aiSuccessToday: number
+  aiFailedToday: number
+  aiAvgDurationMs: number
 }
 
 type AuditRow = {
@@ -119,6 +125,12 @@ const cards = computed(() => {
       value: String(o.downloadsToday),
       hint: `成功 ${o.downloadsSuccessToday} · 累计 ${o.downloadsTotal}`,
       to: '/downloads',
+    },
+    {
+      label: '今日 AI 调用',
+      value: String(o.aiToday),
+      hint: `成功 ${o.aiSuccessToday} · 失败 ${o.aiFailedToday} · 累计 ${o.aiTotal}`,
+      to: '/tools/ai-usage',
     },
   ]
 })

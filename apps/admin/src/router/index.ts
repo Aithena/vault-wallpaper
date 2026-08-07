@@ -127,6 +127,11 @@ export const router = createRouter({
           component: () => import('../views/tools/AuditLogView.vue'),
         },
         {
+          path: 'tools/ai-usage',
+          name: 'tools-ai-usage',
+          component: () => import('../views/ai/AiUsageView.vue'),
+        },
+        {
           path: 'tools/jobs',
           name: 'tools-jobs',
           component: () => import('../views/tools/JobsView.vue'),

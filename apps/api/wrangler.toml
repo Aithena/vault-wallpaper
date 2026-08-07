@@ -22,6 +22,9 @@ preview_bucket_name = "vault-wallpaper-preview"
 APP_NAME = "awall"
 PUBLIC_ORIGIN = "https://awall.cc"
 
+[ai]
+binding = "AI"
+
 # Secrets via `wrangler secret put` or .dev.vars:
 # JWT_SECRET, RESEND_API_KEY, EMAIL_FROM,
 # XUNHUPAY_APPID, XUNHUPAY_APPSECRET, XUNHUPAY_GATEWAY

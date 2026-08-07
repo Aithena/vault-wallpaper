@@ -85,6 +85,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
           { key: 'wallpapers.list.edit', label: '编辑' },
           { key: 'wallpapers.list.delete', label: '删除' },
           { key: 'wallpapers.list.batch', label: '批量操作' },
+          { key: 'wallpapers.list.ai', label: 'AI 识别' },
         ],
       },
       {
@@ -237,6 +238,13 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
         key: 'tools.audit',
         label: '全局操作日志',
         path: '/tools/audit',
+        buttons: [],
+      },
+      {
+        key: 'tools.ai_usage',
+        label: 'AI 使用统计',
+        path: '/tools/ai-usage',
+        dataScopeForcedAll: true,
         buttons: [],
       },
       {

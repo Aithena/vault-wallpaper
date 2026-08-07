@@ -6,9 +6,13 @@ export type WallpaperStatus =
   | 'published'
   | 'unpublished'
 
+export type WallpaperAiStatus = 'idle' | 'pending' | 'ready' | 'failed'
+
 export type WallpaperRecord = {
   id: string
   title: string
+  /** Human-confirmed description (may originate from AI). */
+  description?: string
   previewUrl: string
   width: number
   height: number
@@ -19,6 +23,13 @@ export type WallpaperRecord = {
   hasOriginal: boolean
   rejectReason?: string
   createdByAdminId?: string
+  aiStatus?: WallpaperAiStatus
+  aiDescription?: string
+  aiSuggestedTitle?: string
+  aiSuggestedCategoryId?: string | null
+  aiSuggestedTagIds?: string[]
+  aiError?: string
+  aiAnalyzedAt?: string
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -317,6 +328,7 @@ export async function createWallpaper(
     status: 'pending',
     hasOriginal: Boolean(input.hasOriginal),
     tagIds: input.tagIds ?? [],
+    aiStatus: input.aiStatus ?? 'idle',
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
@@ -366,6 +378,7 @@ export function toPublicWallpaper(
   return {
     id: w.id,
     title: w.title,
+    description: w.description ?? '',
     previewUrl: w.previewUrl,
     width: w.width,
     height: w.height,
@@ -378,6 +391,13 @@ export function toPublicWallpaper(
     hasOriginal: w.hasOriginal,
     rejectReason: w.rejectReason ?? null,
     createdByAdminId: w.createdByAdminId ?? null,
+    aiStatus: w.aiStatus ?? 'idle',
+    aiDescription: w.aiDescription ?? '',
+    aiSuggestedTitle: w.aiSuggestedTitle ?? '',
+    aiSuggestedCategoryId: w.aiSuggestedCategoryId ?? null,
+    aiSuggestedTagIds: w.aiSuggestedTagIds ?? [],
+    aiError: w.aiError ?? null,
+    aiAnalyzedAt: w.aiAnalyzedAt ?? null,
     createdAt: w.createdAt,
     updatedAt: w.updatedAt,
   }

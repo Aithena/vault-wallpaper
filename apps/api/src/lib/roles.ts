@@ -158,14 +158,14 @@ export async function ensureDefaultRoles(kv: KVNamespace): Promise<void> {
   }
 
   let opsRole = await getRole(kv, SYSTEM_ROLE_OPS_ID)
+  const opsMenus = allMenus.filter(
+    (k) => k !== 'settings.roles' && k !== 'settings.admins',
+  )
+  const opsButtons = allButtons.filter(
+    (k) =>
+      !k.startsWith('settings.roles.') && !k.startsWith('settings.admins.'),
+  )
   if (!opsRole) {
-    const opsMenus = allMenus.filter(
-      (k) => k !== 'settings.roles' && k !== 'settings.admins',
-    )
-    const opsButtons = allButtons.filter(
-      (k) =>
-        !k.startsWith('settings.roles.') && !k.startsWith('settings.admins.'),
-    )
     opsRole = {
       id: SYSTEM_ROLE_OPS_ID,
       name: '运营',
@@ -180,6 +180,11 @@ export async function ensureDefaultRoles(kv: KVNamespace): Promise<void> {
     }
     await putRole(kv, opsRole)
     await kv.put(codeKey(opsRole.code), opsRole.id)
+  } else if (opsRole.system) {
+    opsRole.menus = opsMenus
+    opsRole.buttons = opsButtons
+    opsRole.updatedAt = now
+    await putRole(kv, opsRole)
   }
 
   const ids = await readIndex(kv)

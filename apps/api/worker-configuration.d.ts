@@ -1,6 +1,7 @@
 interface Env {
   KV: KVNamespace
   R2?: R2Bucket
+  AI?: Ai
   APP_NAME: string
   PUBLIC_ORIGIN: string
   JWT_SECRET: string

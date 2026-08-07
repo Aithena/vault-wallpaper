@@ -5,8 +5,8 @@
         <div>
           <h1>批量上传壁纸</h1>
           <p class="sub">
-            选择多张 jpg 原图；ID 默认取文件名，入库为待审核。每张会写入 R2
-            `originals/{id}.jpg`，并可用同一文件作为预览。
+            选择多张 jpg 原图；ID 默认取文件名，入库为待审核。开启「同步预览」后会写入
+            R2 预览并异步触发 Workers AI（描述 / 建议分类标签），人工审核时确认。
           </p>
         </div>
         <div class="actions">
@@ -278,7 +278,9 @@ async function startUpload() {
         await adminUpload(`/api/admin/wallpapers/${row.id.trim()}/preview`, row.file)
       }
       row.status = 'done'
-      row.message = '已入库（待审核）'
+      row.message = defaults.useAsPreview
+        ? '已入库（待审核，AI 识别中）'
+        : '已入库（待审核；未传预览则需手动识别）'
       ok += 1
     } catch (e) {
       row.status = 'error'

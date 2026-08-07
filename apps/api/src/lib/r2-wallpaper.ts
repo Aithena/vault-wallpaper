@@ -48,6 +48,11 @@ export async function getPreviewObject(r2: R2Bucket | undefined, id: string) {
   return r2.get(previewKey(id))
 }
 
+export async function getOriginalObject(r2: R2Bucket | undefined, id: string) {
+  if (!r2) return null
+  return r2.get(originalKey(id))
+}
+
 /** Public preview URL path served by API. */
 export function previewApiPath(id: string) {
   return `/api/wallpapers/${id}/preview`

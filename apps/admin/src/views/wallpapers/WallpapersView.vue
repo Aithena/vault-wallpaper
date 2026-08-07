@@ -4,7 +4,7 @@
       <div class="page-toolbar">
         <div>
           <h1>壁纸列表</h1>
-          <p class="sub">状态：待审核 / 已驳回 / 已上架 / 已下架；原图缺失不可通过审核。</p>
+          <p class="sub">状态：待审核 / 已驳回 / 已上架 / 已下架。上传预览后 AI 异步识别；待审请先「审核确认」再通过。</p>
         </div>
         <div class="actions">
           <el-button
@@ -44,6 +44,18 @@
         >
           <el-option label="全部" value="all" />
           <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.name" />
+        </el-select>
+        <el-select
+          v-model="filters.aiStatus"
+          placeholder="AI 状态"
+          style="width: 130px"
+          @change="onFilterChange"
+        >
+          <el-option label="全部 AI" value="all" />
+          <el-option label="未识别" value="idle" />
+          <el-option label="识别中" value="pending" />
+          <el-option label="已就绪" value="ready" />
+          <el-option label="失败" value="failed" />
         </el-select>
         <el-input
           v-model="filters.q"
@@ -125,11 +137,26 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="AI" width="90">
+          <template #default="{ row }">
+            <el-tag :type="aiTagType(row.aiStatus)" size="small">
+              {{ aiLabel(row.aiStatus) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="更新时间" min-width="160">
           <template #default="{ row }">{{ row.updatedAt.replace('T', ' ').slice(0, 19) }}</template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="320">
+        <el-table-column label="操作" fixed="right" width="360">
           <template #default="{ row }">
+            <el-button
+              v-if="hasButton('wallpapers.list.edit') && row.status === 'pending'"
+              link
+              type="primary"
+              @click="$router.push(`/wallpapers/${row.id}`)"
+            >
+              审核确认
+            </el-button>
             <el-button
               v-if="hasButton('wallpapers.list.approve')"
               link
@@ -176,7 +203,7 @@
               补传
             </el-button>
             <el-button
-              v-if="hasButton('wallpapers.list.edit')"
+              v-if="hasButton('wallpapers.list.edit') && row.status !== 'pending'"
               link
               type="primary"
               @click="$router.push(`/wallpapers/${row.id}`)"
@@ -231,7 +258,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminApi, adminUpload, ApiError } from '../../lib/api'
 import { buildQuery } from '../../lib/query'
@@ -249,11 +277,13 @@ type WallpaperRow = {
   height: number
   hasOriginal: boolean
   updatedAt: string
+  aiStatus?: 'idle' | 'pending' | 'ready' | 'failed'
 }
 
 type CategoryRow = { id: string; name: string }
 
 const { hasButton } = usePermission()
+const route = useRoute()
 const loading = ref(false)
 const rows = ref<WallpaperRow[]>([])
 const categories = ref<CategoryRow[]>([])
@@ -261,7 +291,12 @@ const selected = ref<WallpaperRow[]>([])
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-const filters = reactive({ status: 'all', category: 'all', q: '' })
+const filters = reactive({
+  status: typeof route.query.status === 'string' ? route.query.status : 'all',
+  category: 'all',
+  aiStatus: typeof route.query.aiStatus === 'string' ? route.query.aiStatus : 'all',
+  q: '',
+})
 
 const reuploadVisible = ref(false)
 const reuploadId = ref('')
@@ -282,6 +317,20 @@ function statusType(s: string): 'warning' | 'danger' | 'success' | 'info' {
   if (s === 'pending') return 'warning'
   if (s === 'rejected') return 'danger'
   if (s === 'published') return 'success'
+  return 'info'
+}
+
+function aiLabel(s?: string) {
+  return (
+    { idle: '未识别', pending: '识别中', ready: '已就绪', failed: '失败' }[s || 'idle'] ??
+    '未识别'
+  )
+}
+
+function aiTagType(s?: string): 'info' | 'warning' | 'success' | 'danger' {
+  if (s === 'ready') return 'success'
+  if (s === 'pending') return 'warning'
+  if (s === 'failed') return 'danger'
   return 'info'
 }
 
@@ -313,6 +362,7 @@ async function load() {
       q: filters.q.trim(),
       status: filters.status,
       category: filters.category,
+      aiStatus: filters.aiStatus,
     })
     const data = await adminApi<{
       wallpapers: WallpaperRow[]
@@ -475,6 +525,25 @@ onMounted(async () => {
   await loadTaxonomy()
   await load()
 })
+
+watch(
+  () => [route.query.status, route.query.aiStatus] as const,
+  ([status, aiStatus]) => {
+    let changed = false
+    if (typeof status === 'string' && status !== filters.status) {
+      filters.status = status
+      changed = true
+    }
+    if (typeof aiStatus === 'string' && aiStatus !== filters.aiStatus) {
+      filters.aiStatus = aiStatus
+      changed = true
+    }
+    if (changed) {
+      page.value = 1
+      void load()
+    }
+  },
+)
 </script>
 
 <style scoped>

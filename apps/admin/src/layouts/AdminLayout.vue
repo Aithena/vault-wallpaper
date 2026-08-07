@@ -14,9 +14,34 @@
         />
       </div>
       <div class="a-right">
-        <el-badge is-dot :hidden="false">
-          <el-button :icon="Bell" circle title="消息" />
-        </el-badge>
+        <el-popover
+          placement="bottom-end"
+          :width="360"
+          trigger="click"
+          @show="loadNotifications"
+        >
+          <template #reference>
+            <el-badge :value="notifBadge" :hidden="!notifBadge" :max="99">
+              <el-button :icon="Bell" circle title="消息" />
+            </el-badge>
+          </template>
+          <div class="notif-panel">
+            <div class="notif-head">待办提醒</div>
+            <div v-loading="notifLoading" class="notif-body">
+              <button
+                v-for="item in notifItems"
+                :key="item.id"
+                type="button"
+                class="notif-item"
+                @click="openNotification(item)"
+              >
+                <div class="notif-title">{{ item.title }}</div>
+                <div class="notif-desc">{{ item.description }}</div>
+              </button>
+              <p v-if="!notifLoading && !notifItems.length" class="notif-empty">暂无待办</p>
+            </div>
+          </div>
+        </el-popover>
         <el-dropdown trigger="click" @command="onCommand">
           <div class="admin-chip">
             <span class="admin-name">{{ profile?.name ?? '管理员' }}</span>
@@ -89,6 +114,7 @@ import {
   type AdminMenuGroup,
 } from '../config/menu'
 import { getAdminProfile, logoutAdmin, refreshAdminMe } from '../lib/auth'
+import { adminApi } from '../lib/api'
 
 const iconMap: Record<string, object> = {
   home: HomeFilled,
@@ -99,14 +125,50 @@ const iconMap: Record<string, object> = {
   tools: Tools,
 }
 
+type NotifItem = {
+  id: string
+  type: string
+  title: string
+  description: string
+  count: number
+  path: string
+}
+
 const route = useRoute()
 const router = useRouter()
 const profile = ref(getAdminProfile())
+const notifBadge = ref(0)
+const notifItems = ref<NotifItem[]>([])
+const notifLoading = ref(false)
+
+async function loadNotifications() {
+  notifLoading.value = true
+  try {
+    const data = await adminApi<{ badge: number; items: NotifItem[] }>(
+      '/api/admin/dashboard/notifications',
+    )
+    notifBadge.value = data.badge
+    notifItems.value = data.items
+  } catch {
+    notifBadge.value = 0
+    notifItems.value = []
+  } finally {
+    notifLoading.value = false
+  }
+}
+
+function openNotification(item: NotifItem) {
+  void router.push(item.path)
+}
 
 onMounted(() => {
   void refreshAdminMe().then((admin) => {
     if (admin) profile.value = admin
   })
+  void loadNotifications()
+  window.setInterval(() => {
+    void loadNotifications()
+  }, 60_000)
 })
 
 const visibleMenu = computed(() => filterMenuByPermissions(profile.value?.menus))
@@ -282,5 +344,58 @@ function onCommand(cmd: string) {
   min-width: 0;
   padding: 18px 20px 28px;
   overflow: auto;
+}
+
+.notif-panel {
+  margin: -4px;
+}
+
+.notif-head {
+  font-size: 13px;
+  font-weight: 650;
+  padding: 4px 8px 10px;
+  border-bottom: 1px solid var(--admin-line);
+  margin-bottom: 6px;
+}
+
+.notif-body {
+  min-height: 48px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.notif-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  padding: 10px 8px;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(27, 36, 48, 0.04);
+  }
+}
+
+.notif-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--admin-text);
+}
+
+.notif-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--admin-muted);
+  line-height: 1.4;
+}
+
+.notif-empty {
+  margin: 16px 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--admin-muted);
 }
 </style>

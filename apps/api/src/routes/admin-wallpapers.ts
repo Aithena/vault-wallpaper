@@ -31,6 +31,11 @@ import {
 } from '../lib/r2-wallpaper'
 import { assertOwned, filterOwned, getActorScope } from '../lib/admin-scope'
 import { paginate, parsePageQuery } from '../lib/paging'
+import {
+  analyzeWallpaperAi,
+  markAiPending,
+  scheduleWallpaperAi,
+} from '../lib/wallpaper-ai'
 
 export const adminWallpapersRoutes = new Hono<AppEnv>()
 adminWallpapersRoutes.use('*', requireAdmin)
@@ -73,9 +78,13 @@ adminWallpapersRoutes.get('/', async (c) => {
   const q = c.req.query('q')?.trim().toLowerCase()
   const status = c.req.query('status')?.trim()
   const category = c.req.query('category')?.trim()
+  const aiStatus = c.req.query('aiStatus')?.trim()
 
   let filtered = scoped
   if (status) filtered = filtered.filter((w) => w.status === status)
+  if (aiStatus) {
+    filtered = filtered.filter((w) => (w.aiStatus ?? 'idle') === aiStatus)
+  }
   if (q) filtered = filtered.filter((w) => w.title.toLowerCase().includes(q))
   if (category) {
     const catLower = category.toLowerCase()
@@ -494,13 +503,105 @@ adminWallpapersRoutes.post('/:id/preview', async (c) => {
     target: `wallpaper:${id}`,
     detail: file.name,
   })
+  scheduleWallpaperAi(c.executionCtx, c.env, id, {
+    trigger: 'auto',
+    adminId: admin.id,
+    adminUsername: admin.username,
+  })
   return c.json({ ok: true, wallpaper: toPublicWallpaper(wp!), previewUrl })
+})
+
+/** Re-run Workers AI analysis (sync). Suggestions only — does not overwrite taxonomy. */
+adminWallpapersRoutes.post('/:id/ai-analyze', async (c) => {
+  const denied = await requireButton(c, 'wallpapers.list.ai')
+  if (denied) return denied
+  const id = c.req.param('id')
+  await ensureSeedCatalog(c.env.KV)
+  const { admin, scope } = await getActorScope(c)
+  const existing = await getWallpaper(c.env.KV, id)
+  if (!existing || existing.deletedAt) return c.json({ error: 'not_found' }, 404)
+  if (!assertOwned(scope, admin.id, existing.createdByAdminId)) {
+    return c.json({ error: 'forbidden_scope' }, 403)
+  }
+
+  await markAiPending(c.env.KV, id)
+  const result = await analyzeWallpaperAi(c.env, id, {
+    trigger: 'manual',
+    adminId: admin.id,
+    adminUsername: admin.username,
+  })
+  await writeAudit(c.env.KV, {
+    adminId: admin.id,
+    adminUsername: admin.username,
+    action: 'wallpapers.list.ai',
+    target: `wallpaper:${id}`,
+    detail: result.ok ? 'ready' : result.error,
+  })
+  if (!result.ok) {
+    const wp = await getWallpaper(c.env.KV, id)
+    return c.json(
+      {
+        ok: false,
+        error: result.error,
+        wallpaper: wp ? toPublicWallpaper(wp) : null,
+      },
+      result.error === 'ai_unavailable' ? 503 : 400,
+    )
+  }
+  return c.json({ ok: true, wallpaper: toPublicWallpaper(result.wallpaper) })
+})
+
+/** Apply AI suggestions into editable fields (title/description/category/tags). */
+adminWallpapersRoutes.post('/:id/ai-apply', async (c) => {
+  const denied = await requireButton(c, 'wallpapers.list.edit')
+  if (denied) return denied
+  const id = c.req.param('id')
+  const body = (await c.req.json().catch(() => ({}))) as {
+    applyTitle?: boolean
+    applyDescription?: boolean
+    applyCategory?: boolean
+    applyTags?: boolean
+  }
+  await ensureSeedCatalog(c.env.KV)
+  const { admin, scope } = await getActorScope(c)
+  const existing = await getWallpaper(c.env.KV, id)
+  if (!existing || existing.deletedAt) return c.json({ error: 'not_found' }, 404)
+  if (!assertOwned(scope, admin.id, existing.createdByAdminId)) {
+    return c.json({ error: 'forbidden_scope' }, 403)
+  }
+  if ((existing.aiStatus ?? 'idle') !== 'ready') {
+    return c.json({ error: 'ai_not_ready' }, 400)
+  }
+
+  const patch: Partial<typeof existing> = {}
+  if (body.applyTitle !== false && existing.aiSuggestedTitle) {
+    patch.title = existing.aiSuggestedTitle
+  }
+  if (body.applyDescription !== false && existing.aiDescription) {
+    patch.description = existing.aiDescription
+  }
+  if (body.applyCategory !== false && existing.aiSuggestedCategoryId) {
+    patch.categoryId = existing.aiSuggestedCategoryId
+  }
+  if (body.applyTags !== false && existing.aiSuggestedTagIds?.length) {
+    patch.tagIds = existing.aiSuggestedTagIds
+  }
+
+  const wp = await updateWallpaper(c.env.KV, id, patch)
+  await writeAudit(c.env.KV, {
+    adminId: admin.id,
+    adminUsername: admin.username,
+    action: 'wallpapers.list.ai_apply',
+    target: `wallpaper:${id}`,
+  })
+  return c.json({ ok: true, wallpaper: toPublicWallpaper(wp!) })
 })
 
 adminWallpapersRoutes.patch('/:id', async (c) => {
   const id = c.req.param('id')
   const body = (await c.req.json().catch(() => ({}))) as {
     title?: string
+    description?: string
     previewUrl?: string
     width?: number
     height?: number
@@ -570,6 +671,7 @@ adminWallpapersRoutes.patch('/:id', async (c) => {
 
   const wp = await updateWallpaper(c.env.KV, id, {
     title: body.title,
+    description: body.description,
     previewUrl: body.previewUrl,
     width: body.width,
     height: body.height,
