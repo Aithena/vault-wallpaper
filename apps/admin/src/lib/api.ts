@@ -62,9 +62,16 @@ export async function adminApi<T>(
   const res = await fetch(apiUrl(path), { ...options, headers })
   const data = (await res.json().catch(() => ({}))) as {
     error?: string
+    message?: string
   } & T
   if (!res.ok) {
-    throw new ApiError(data.error || res.statusText || 'request_failed', res.status)
+    const code =
+      data.error ||
+      data.message ||
+      (res.status === 429 ? 'Too Many Requests' : '') ||
+      res.statusText ||
+      'request_failed'
+    throw new ApiError(code, res.status)
   }
   return data
 }

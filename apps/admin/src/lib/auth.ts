@@ -1,5 +1,6 @@
 import type { AdminPublic } from '@vault/shared'
 import {
+  ApiError,
   adminApi,
   cacheAdminProfile,
   clearAdminToken,
@@ -28,7 +29,7 @@ const ERROR_MSG: Record<string, string> = {
   invalid_email: '邮箱格式不正确',
   invalid_password: '密码至少 6 位',
   invalid_code: '验证码无效或已过期',
-  too_frequent: '发送过于频繁，请稍后再试',
+  too_frequent: '操作过于频繁，请稍后再试',
   email_send_failed: '邮件发送失败',
   unauthorized: '未登录或登录已失效',
   username_taken: '用户名已存在',
@@ -48,10 +49,24 @@ const ERROR_MSG: Record<string, string> = {
   system_role: '系统角色不可删除',
   role_in_use: '仍有员工绑定该角色',
   server_misconfigured: '服务未配置 JWT_SECRET',
+  request_failed: '请求失败，请稍后重试',
+  'Too Many Requests': '请求过于频繁或云端配额已用尽，请稍后再试',
 }
 
-export function adminErrorMessage(code: string): string {
-  return ERROR_MSG[code] || code
+export function adminErrorMessage(code: string, status?: number): string {
+  if (status === 429) return '请求过于频繁或云端配额已用尽，请稍后再试'
+  if (status === 502 || status === 503 || status === 504) {
+    return '服务暂时不可用，请稍后再试'
+  }
+  if (ERROR_MSG[code]) return ERROR_MSG[code]
+  if (!code || code === 'Internal Server Error') return '请求失败，请稍后重试'
+  return code
+}
+
+function failMessage(e: unknown, fallback = 'request_failed'): string {
+  if (e instanceof ApiError) return adminErrorMessage(e.code, e.status)
+  if (e instanceof Error) return adminErrorMessage(e.message)
+  return adminErrorMessage(fallback)
 }
 
 export async function loginAdmin(
@@ -70,8 +85,7 @@ export async function loginAdmin(
     cacheAdminProfile(data.admin)
     return { ok: true, profile: data.admin }
   } catch (e) {
-    const code = e instanceof Error ? e.message : 'invalid_credentials'
-    return { ok: false, message: adminErrorMessage(code) }
+    return { ok: false, message: failMessage(e, 'invalid_credentials') }
   }
 }
 
@@ -102,8 +116,7 @@ export async function requestPasswordReset(email: string): Promise<{
     })
     return { ok: true, previewCode: data.previewCode }
   } catch (e) {
-    const code = e instanceof Error ? e.message : 'request_failed'
-    return { ok: false, message: adminErrorMessage(code) }
+    return { ok: false, message: failMessage(e) }
   }
 }
 
@@ -119,8 +132,7 @@ export async function confirmPasswordReset(input: {
     })
     return { ok: true }
   } catch (e) {
-    const code = e instanceof Error ? e.message : 'request_failed'
-    return { ok: false, message: adminErrorMessage(code) }
+    return { ok: false, message: failMessage(e) }
   }
 }
 
