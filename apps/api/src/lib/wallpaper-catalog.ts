@@ -86,22 +86,28 @@ async function writeIndex(kv: KVNamespace, key: string, ids: string[]) {
 
 export async function listCategories(kv: KVNamespace): Promise<CategoryRecord[]> {
   const ids = await readIndex(kv, CAT_INDEX)
-  const rows: CategoryRecord[] = []
-  for (const id of ids) {
-    const raw = await kv.get(catKey(id))
-    if (raw) rows.push(JSON.parse(raw) as CategoryRecord)
-  }
+  const rows = (
+    await Promise.all(
+      ids.map(async (id) => {
+        const raw = await kv.get(catKey(id))
+        return raw ? (JSON.parse(raw) as CategoryRecord) : null
+      }),
+    )
+  ).filter((r): r is CategoryRecord => Boolean(r))
   rows.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
   return rows
 }
 
 export async function listTags(kv: KVNamespace): Promise<TagRecord[]> {
   const ids = await readIndex(kv, TAG_INDEX)
-  const rows: TagRecord[] = []
-  for (const id of ids) {
-    const raw = await kv.get(tagKey(id))
-    if (raw) rows.push(JSON.parse(raw) as TagRecord)
-  }
+  const rows = (
+    await Promise.all(
+      ids.map(async (id) => {
+        const raw = await kv.get(tagKey(id))
+        return raw ? (JSON.parse(raw) as TagRecord) : null
+      }),
+    )
+  ).filter((r): r is TagRecord => Boolean(r))
   rows.sort((a, b) => a.name.localeCompare(b.name))
   return rows
 }
@@ -119,13 +125,13 @@ export async function listWallpapers(
   opts?: { includeDeleted?: boolean },
 ): Promise<WallpaperRecord[]> {
   const ids = await readIndex(kv, WP_INDEX)
-  const rows: WallpaperRecord[] = []
-  for (const id of ids) {
-    const wp = await getWallpaper(kv, id)
-    if (!wp) continue
-    if (!opts?.includeDeleted && wp.deletedAt) continue
-    rows.push(wp)
-  }
+  const rows = (
+    await Promise.all(ids.map((id) => getWallpaper(kv, id)))
+  ).filter((wp): wp is WallpaperRecord => {
+    if (!wp) return false
+    if (!opts?.includeDeleted && wp.deletedAt) return false
+    return true
+  })
   rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   return rows
 }
@@ -133,6 +139,62 @@ export async function listWallpapers(
 export async function listPublishedWallpapers(kv: KVNamespace) {
   const all = await listWallpapers(kv)
   return all.filter((w) => w.status === 'published' && !w.deletedAt)
+}
+
+const PUBLIC_SNAPSHOT_KEY = 'wallpapers:public_catalog_v1'
+
+export type PublicCatalogSnapshot = {
+  updatedAt: string
+  items: ReturnType<typeof toPublicWallpaper>[]
+  categories: CategoryRecord[]
+  tags: TagRecord[]
+}
+
+export async function invalidatePublicCatalogSnapshot(
+  kv: KVNamespace,
+): Promise<void> {
+  await kv.delete(PUBLIC_SNAPSHOT_KEY)
+}
+
+async function buildPublicCatalogSnapshot(
+  kv: KVNamespace,
+): Promise<PublicCatalogSnapshot> {
+  const [items, categories, tags] = await Promise.all([
+    listPublishedWallpapers(kv),
+    listCategories(kv),
+    listTags(kv),
+  ])
+  const catMap = new Map(categories.map((c) => [c.id, c.name]))
+  const tagMap = new Map(tags.map((t) => [t.id, t.name]))
+  return {
+    updatedAt: new Date().toISOString(),
+    items: items.map((w) =>
+      toPublicWallpaper(
+        w,
+        w.categoryId ? catMap.get(w.categoryId) : null,
+        w.tagIds.map((id) => tagMap.get(id)).filter(Boolean) as string[],
+      ),
+    ),
+    categories,
+    tags,
+  }
+}
+
+/** C-end catalog: 1 KV read when warm; rebuild + 1 write on miss. */
+export async function getPublicCatalogSnapshot(
+  kv: KVNamespace,
+): Promise<PublicCatalogSnapshot> {
+  const raw = await kv.get(PUBLIC_SNAPSHOT_KEY)
+  if (raw) {
+    try {
+      return JSON.parse(raw) as PublicCatalogSnapshot
+    } catch {
+      /* rebuild */
+    }
+  }
+  const snap = await buildPublicCatalogSnapshot(kv)
+  await kv.put(PUBLIC_SNAPSHOT_KEY, JSON.stringify(snap))
+  return snap
 }
 
 export async function ensureSeedCatalog(kv: KVNamespace): Promise<void> {
@@ -207,6 +269,7 @@ export async function ensureSeedCatalog(kv: KVNamespace): Promise<void> {
     await kv.put(wpKey(w.id), JSON.stringify(w))
   }
   await writeIndex(kv, WP_INDEX, seeds.map((w) => w.id))
+  await invalidatePublicCatalogSnapshot(kv)
 }
 
 export async function createCategory(
@@ -227,6 +290,7 @@ export async function createCategory(
   const ids = await readIndex(kv, CAT_INDEX)
   ids.push(record.id)
   await writeIndex(kv, CAT_INDEX, ids)
+  await invalidatePublicCatalogSnapshot(kv)
   return record
 }
 
@@ -243,6 +307,7 @@ export async function updateCategory(
   if (patch.sort !== undefined) record.sort = patch.sort
   record.updatedAt = new Date().toISOString()
   await kv.put(catKey(id), JSON.stringify(record))
+  await invalidatePublicCatalogSnapshot(kv)
   return record
 }
 
@@ -260,6 +325,7 @@ export async function deleteCategory(
     CAT_INDEX,
     (await readIndex(kv, CAT_INDEX)).filter((x) => x !== id),
   )
+  await invalidatePublicCatalogSnapshot(kv)
   return { ok: true }
 }
 
@@ -280,6 +346,7 @@ export async function createTag(
   const ids = await readIndex(kv, TAG_INDEX)
   ids.push(record.id)
   await writeIndex(kv, TAG_INDEX, ids)
+  await invalidatePublicCatalogSnapshot(kv)
   return record
 }
 
@@ -295,6 +362,7 @@ export async function updateTag(
   if (patch.slug !== undefined) record.slug = patch.slug.trim().toLowerCase()
   record.updatedAt = new Date().toISOString()
   await kv.put(tagKey(id), JSON.stringify(record))
+  await invalidatePublicCatalogSnapshot(kv)
   return record
 }
 
@@ -312,6 +380,7 @@ export async function deleteTag(
     TAG_INDEX,
     (await readIndex(kv, TAG_INDEX)).filter((x) => x !== id),
   )
+  await invalidatePublicCatalogSnapshot(kv)
   return { ok: true }
 }
 
@@ -343,6 +412,15 @@ export async function createWallpaper(
   const ids = await readIndex(kv, WP_INDEX)
   if (!ids.includes(record.id)) ids.unshift(record.id)
   await writeIndex(kv, WP_INDEX, ids)
+  try {
+    const { patchDashboardStats } = await import('./dashboard-stats')
+    await patchDashboardStats(kv, (s) => {
+      s.wallpapersTotal += 1
+      s.wallpapersPending += 1
+    })
+  } catch {
+    /* ignore */
+  }
   return record
 }
 
@@ -363,6 +441,39 @@ export async function updateWallpaper(
   }
   if (patch.rejectReason === '') delete next.rejectReason
   await kv.put(wpKey(id), JSON.stringify(next))
+  const wasPublic = record.status === 'published' && !record.deletedAt
+  const isPublic = next.status === 'published' && !next.deletedAt
+  if (wasPublic || isPublic) {
+    await invalidatePublicCatalogSnapshot(kv)
+  }
+  try {
+    const { patchDashboardStats } = await import('./dashboard-stats')
+    await patchDashboardStats(kv, (s) => {
+      if (record.status === 'pending' && next.status !== 'pending') {
+        s.wallpapersPending = Math.max(0, s.wallpapersPending - 1)
+      }
+      if (record.status !== 'pending' && next.status === 'pending') {
+        s.wallpapersPending += 1
+      }
+      if (record.status !== 'published' && next.status === 'published') {
+        s.wallpapersPublished += 1
+      }
+      if (record.status === 'published' && next.status !== 'published') {
+        s.wallpapersPublished = Math.max(0, s.wallpapersPublished - 1)
+      }
+      if (!record.deletedAt && next.deletedAt) {
+        s.wallpapersTotal = Math.max(0, s.wallpapersTotal - 1)
+        if (record.status === 'pending') {
+          s.wallpapersPending = Math.max(0, s.wallpapersPending - 1)
+        }
+        if (record.status === 'published') {
+          s.wallpapersPublished = Math.max(0, s.wallpapersPublished - 1)
+        }
+      }
+    })
+  } catch {
+    /* ignore */
+  }
   return next
 }
 

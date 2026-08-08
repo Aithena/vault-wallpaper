@@ -17,6 +17,10 @@ export type UserRecord = {
   blacklisted?: boolean
 }
 
+const INDEX_KEY = 'users:index'
+const INDEX_BUILT_FLAG = 'users:index_built_v1'
+const MAX_INDEX = 10000
+
 function userKey(id: string) {
   return `user:${id}`
 }
@@ -30,6 +34,57 @@ function normalizeUser(user: UserRecord): UserRecord {
   if (!user.accountStatus) user.accountStatus = 'active'
   if (user.blacklisted === undefined) user.blacklisted = false
   return user
+}
+
+async function readIndex(kv: KVNamespace): Promise<string[]> {
+  const raw = await kv.get(INDEX_KEY)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as string[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+async function writeIndex(kv: KVNamespace, ids: string[]) {
+  await kv.put(INDEX_KEY, JSON.stringify(ids.slice(0, MAX_INDEX)))
+}
+
+async function ensureUsersIndex(kv: KVNamespace): Promise<string[]> {
+  const built = await kv.get(INDEX_BUILT_FLAG)
+  if (built) return readIndex(kv)
+
+  const ids: string[] = []
+  let cursor: string | undefined
+  do {
+    const page = await kv.list({ prefix: 'user:', cursor, limit: 1000 })
+    for (const key of page.keys) {
+      if (!/^user:[0-9a-f-]{36}$/i.test(key.name)) continue
+      ids.push(key.name.slice('user:'.length))
+    }
+    cursor = page.list_complete ? undefined : page.cursor
+  } while (cursor)
+
+  await writeIndex(kv, ids)
+  await kv.put(INDEX_BUILT_FLAG, '1')
+  return ids
+}
+
+async function addUserToIndex(kv: KVNamespace, id: string) {
+  const ids = await ensureUsersIndex(kv)
+  if (!ids.includes(id)) {
+    ids.unshift(id)
+    await writeIndex(kv, ids)
+  }
+}
+
+function isPaidMember(user: UserRecord): boolean {
+  return (
+    isUserMembershipActive(user) &&
+    Boolean(user.memberTier) &&
+    user.memberTier !== 'free'
+  )
 }
 
 export async function findOrCreateUserByEmail(
@@ -59,6 +114,15 @@ export async function findOrCreateUserByEmail(
   }
   await kv.put(userKey(id), JSON.stringify(user))
   await kv.put(emailKey(normalized), id)
+  await addUserToIndex(kv, id)
+  try {
+    const { patchDashboardStats } = await import('./dashboard-stats')
+    await patchDashboardStats(kv, (s) => {
+      s.usersTotal += 1
+    })
+  } catch {
+    /* ignore */
+  }
   return user
 }
 
@@ -91,18 +155,15 @@ export async function getUserByEmail(
 }
 
 export async function listUsers(kv: KVNamespace): Promise<UserRecord[]> {
-  const rows: UserRecord[] = []
-  let cursor: string | undefined
-  do {
-    const page = await kv.list({ prefix: 'user:', cursor, limit: 1000 })
-    for (const key of page.keys) {
-      // skip malformed; only user:{uuid}
-      if (!/^user:[0-9a-f-]{36}$/i.test(key.name)) continue
-      const raw = await kv.get(key.name)
-      if (raw) rows.push(normalizeUser(JSON.parse(raw) as UserRecord))
-    }
-    cursor = page.list_complete ? undefined : page.cursor
-  } while (cursor)
+  const ids = await ensureUsersIndex(kv)
+  const rows = (
+    await Promise.all(
+      ids.map(async (id) => {
+        const raw = await kv.get(userKey(id))
+        return raw ? normalizeUser(JSON.parse(raw) as UserRecord) : null
+      }),
+    )
+  ).filter((r): r is UserRecord => Boolean(r))
   rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   return rows
 }
@@ -120,12 +181,37 @@ export async function updateUserAdmin(
 ): Promise<UserRecord | null> {
   const user = await getUser(kv, id)
   if (!user) return null
+  const beforePaid = isPaidMember(user)
+  const beforeDisabled = user.accountStatus === 'disabled'
+  const beforeBl = Boolean(user.blacklisted)
+
   if (patch.accountStatus !== undefined) user.accountStatus = patch.accountStatus
   if (patch.blacklisted !== undefined) user.blacklisted = patch.blacklisted
   if (patch.memberTier !== undefined) user.memberTier = patch.memberTier
   if (patch.memberStatus !== undefined) user.memberStatus = patch.memberStatus
   if (patch.memberExpiresAt !== undefined) user.memberExpiresAt = patch.memberExpiresAt
   await kv.put(userKey(id), JSON.stringify(user))
+
+  const afterPaid = isPaidMember(user)
+  const afterDisabled = user.accountStatus === 'disabled'
+  const afterBl = Boolean(user.blacklisted)
+  try {
+    const { patchDashboardStats } = await import('./dashboard-stats')
+    await patchDashboardStats(kv, (s) => {
+      if (!beforeDisabled && afterDisabled) s.usersDisabled += 1
+      if (beforeDisabled && !afterDisabled)
+        s.usersDisabled = Math.max(0, s.usersDisabled - 1)
+      if (!beforeBl && afterBl) s.usersBlacklisted += 1
+      if (beforeBl && !afterBl)
+        s.usersBlacklisted = Math.max(0, s.usersBlacklisted - 1)
+      if (!beforePaid && afterPaid) s.paidMembers += 1
+      if (beforePaid && !afterPaid)
+        s.paidMembers = Math.max(0, s.paidMembers - 1)
+    })
+  } catch {
+    /* ignore */
+  }
+
   return user
 }
 
@@ -144,6 +230,7 @@ export async function activateMembership(
 ): Promise<UserRecord | null> {
   const user = await getUser(kv, userId)
   if (!user) return null
+  const beforePaid = isPaidMember(user)
 
   const now = Date.now()
   const currentExp = user.memberExpiresAt ? Date.parse(user.memberExpiresAt) : 0
@@ -156,6 +243,17 @@ export async function activateMembership(
   if (!user.memberSince) user.memberSince = new Date(now).toISOString()
 
   await kv.put(userKey(userId), JSON.stringify(user))
+  const afterPaid = isPaidMember(user)
+  if (!beforePaid && afterPaid) {
+    try {
+      const { patchDashboardStats } = await import('./dashboard-stats')
+      await patchDashboardStats(kv, (s) => {
+        s.paidMembers += 1
+      })
+    } catch {
+      /* ignore */
+    }
+  }
   return user
 }
 
@@ -166,9 +264,20 @@ export async function revokeMembership(
 ): Promise<UserRecord | null> {
   const user = await getUser(kv, userId)
   if (!user) return null
+  const beforePaid = isPaidMember(user)
   user.memberStatus = 'disabled'
   user.memberExpiresAt = new Date().toISOString()
   await kv.put(userKey(userId), JSON.stringify(user))
+  if (beforePaid) {
+    try {
+      const { patchDashboardStats } = await import('./dashboard-stats')
+      await patchDashboardStats(kv, (s) => {
+        s.paidMembers = Math.max(0, s.paidMembers - 1)
+      })
+    } catch {
+      /* ignore */
+    }
+  }
   return user
 }
 

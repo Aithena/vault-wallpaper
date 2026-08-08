@@ -4,7 +4,9 @@
       <div class="page-toolbar">
         <div>
           <h1>全部订单</h1>
-          <p class="sub">含正式付费、0 元免费开通、后台手工开通；支持补发、标记退款与导出。</p>
+          <p class="sub">
+            含正式付费、0 元免费开通、后台手工开通；未选日期时默认近 30 天，最长 365 天。
+          </p>
         </div>
         <div class="actions">
           <el-button
@@ -367,13 +369,20 @@ async function refund(row: OrderRow) {
 async function exportCsv() {
   exporting.value = true
   try {
+    const qs = buildQuery({
+      dateFrom: dateRange.value?.[0],
+      dateTo: dateRange.value?.[1],
+    })
     await adminDownload(
-      '/api/admin/orders/export',
+      `/api/admin/orders/export${qs}`,
       `orders-${new Date().toISOString().slice(0, 10)}.csv`,
     )
     ElMessage.success('已开始下载')
   } catch (e) {
-    ElMessage.error(e instanceof ApiError ? e.code : '导出失败')
+    const code = e instanceof ApiError ? e.code : '导出失败'
+    ElMessage.error(
+      code === 'range_too_long' ? '导出跨度不能超过 365 天' : code,
+    )
   } finally {
     exporting.value = false
   }

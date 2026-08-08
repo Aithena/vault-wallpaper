@@ -1,6 +1,6 @@
 import type { Context, Next } from 'hono'
 import type { AppEnv } from '../types'
-import { getAdmin, ensureDefaultAdmin } from './admins'
+import { getAdmin } from './admins'
 import { readBearer, verifySession } from './session'
 
 export async function requireAdmin(c: Context<AppEnv>, next: Next) {
@@ -12,7 +12,6 @@ export async function requireAdmin(c: Context<AppEnv>, next: Next) {
   if (!session || session.role !== 'admin') {
     return c.json({ error: 'unauthorized' }, 401)
   }
-  await ensureDefaultAdmin(c.env.KV)
   const admin = await getAdmin(c.env.KV, session.sub)
   if (!admin || admin.status !== 'active') {
     return c.json({ error: 'unauthorized' }, 401)

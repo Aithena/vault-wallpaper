@@ -51,6 +51,9 @@ adminAdminsRoutes.post('/', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as {
     username?: string
     password?: string
+    nickName?: string
+    realName?: string
+    /** @deprecated use nickName */
     name?: string
     email?: string | null
     roleId?: string
@@ -72,7 +75,8 @@ adminAdminsRoutes.post('/', async (c) => {
   const result = await createAdmin(c.env.KV, {
     username: body.username,
     password: body.password,
-    name: body.name ?? body.username,
+    nickName: body.nickName ?? body.name ?? body.username,
+    realName: body.realName ?? '',
     email: body.email,
     roleId: body.roleId,
     dataScope: body.dataScope,
@@ -87,6 +91,9 @@ adminAdminsRoutes.patch('/:id', async (c) => {
   const { role: actorRole } = await loadAdminWithRole(c.env.KV, actor)
   const id = c.req.param('id')
   const body = (await c.req.json().catch(() => ({}))) as {
+    nickName?: string
+    realName?: string
+    /** @deprecated use nickName */
     name?: string
     username?: string
     email?: string | null
@@ -96,6 +103,8 @@ adminAdminsRoutes.patch('/:id', async (c) => {
   }
 
   const needEdit =
+    body.nickName !== undefined ||
+    body.realName !== undefined ||
     body.name !== undefined ||
     body.username !== undefined ||
     body.roleId !== undefined ||
@@ -125,7 +134,8 @@ adminAdminsRoutes.patch('/:id', async (c) => {
   }
 
   const result = await updateAdmin(c.env.KV, id, {
-    name: body.name,
+    nickName: body.nickName ?? body.name,
+    realName: body.realName,
     username: body.username,
     email: body.email,
     roleId: body.roleId,

@@ -4,7 +4,7 @@ import type { AppEnv } from '../types'
 import { requireAdmin } from '../lib/admin-auth'
 import { requireButton, requireMenu } from '../lib/admin-perm'
 import { writeAudit } from '../lib/audit'
-import { listOrdersByUser } from '../lib/orders'
+import { listOrdersByUser, saveOrder } from '../lib/orders'
 import { addToBlacklist, removeFromBlacklist } from '../lib/blacklist'
 import { listUserLogs, writeUserLog } from '../lib/user-logs'
 import { listOnlinePresence, ONLINE_WINDOW_MS } from '../lib/presence'
@@ -271,7 +271,7 @@ adminUsersRoutes.post('/:id/renew', async (c) => {
     createdAt: new Date().toISOString(),
     paidAt: new Date().toISOString(),
   }
-  await c.env.KV.put(`order:${orderId}`, JSON.stringify(order))
+  await saveOrder(c.env.KV, order)
 
   const admin = c.get('admin')!
   await writeUserLog(c.env.KV, {

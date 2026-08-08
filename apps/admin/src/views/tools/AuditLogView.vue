@@ -4,7 +4,7 @@
       <div class="page-toolbar">
         <div>
           <h1>全局操作日志</h1>
-          <p class="sub">仅管理员后台关键操作；与用户日志、下载记录三分开。</p>
+          <p class="sub">仅管理员后台关键操作；默认近 30 天，最长 365 天。</p>
         </div>
         <div class="actions">
           <el-button @click="load">刷新</el-button>

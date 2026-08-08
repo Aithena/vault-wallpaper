@@ -133,11 +133,14 @@ export async function ensureDefaultRoles(kv: KVNamespace): Promise<void> {
   const now = new Date().toISOString()
 
   let superRole = await getRole(kv, SYSTEM_ROLE_SUPER_ID)
+  const freshInstall = !superRole
+  let touched = false
+
   if (!superRole) {
     superRole = {
       id: SYSTEM_ROLE_SUPER_ID,
       name: '超级管理员',
-      code: 'super',
+      code: 'admin',
       remark: '系统内置，拥有全部菜单与按钮',
       menus: allMenus,
       buttons: allButtons,
@@ -148,13 +151,34 @@ export async function ensureDefaultRoles(kv: KVNamespace): Promise<void> {
     }
     await putRole(kv, superRole)
     await kv.put(codeKey(superRole.code), superRole.id)
+    touched = true
   } else {
-    // keep system role in sync with permission tree
-    superRole.menus = allMenus
-    superRole.buttons = allButtons
-    superRole.dataScope = 'all'
-    superRole.updatedAt = now
-    await putRole(kv, superRole)
+    const prevCode = superRole.code
+    const menusSame =
+      superRole.menus.length === allMenus.length &&
+      allMenus.every((m) => superRole!.menus.includes(m))
+    const buttonsSame =
+      superRole.buttons.length === allButtons.length &&
+      allButtons.every((b) => superRole!.buttons.includes(b))
+    const needsSync =
+      prevCode !== 'admin' ||
+      !menusSame ||
+      !buttonsSame ||
+      superRole.dataScope !== 'all'
+
+    if (needsSync) {
+      if (prevCode !== 'admin') {
+        await kv.delete(codeKey(prevCode))
+        superRole.code = 'admin'
+      }
+      superRole.menus = allMenus
+      superRole.buttons = allButtons
+      superRole.dataScope = 'all'
+      superRole.updatedAt = now
+      await putRole(kv, superRole)
+      await kv.put(codeKey('admin'), superRole.id)
+      touched = true
+    }
   }
 
   let opsRole = await getRole(kv, SYSTEM_ROLE_OPS_ID)
@@ -165,33 +189,41 @@ export async function ensureDefaultRoles(kv: KVNamespace): Promise<void> {
     (k) =>
       !k.startsWith('settings.roles.') && !k.startsWith('settings.admins.'),
   )
-  if (!opsRole) {
+  // Seed ops only on fresh install; afterwards it is a normal editable role
+  if (!opsRole && freshInstall) {
     opsRole = {
       id: SYSTEM_ROLE_OPS_ID,
       name: '运营',
       code: 'ops',
-      remark: '系统内置运营角色（不含员工管理与角色管理）',
+      remark: '默认运营角色（不含员工管理与角色管理），可按需修改或删除',
       menus: opsMenus,
       buttons: opsButtons,
       dataScope: 'all',
-      system: true,
+      system: false,
       createdAt: now,
       updatedAt: now,
     }
     await putRole(kv, opsRole)
     await kv.put(codeKey(opsRole.code), opsRole.id)
-  } else if (opsRole.system) {
-    opsRole.menus = opsMenus
-    opsRole.buttons = opsButtons
+    touched = true
+  } else if (opsRole?.system) {
+    opsRole.system = false
+    if (/系统内置/.test(opsRole.remark || '')) {
+      opsRole.remark = '默认运营角色（不含员工管理与角色管理），可按需修改或删除'
+    }
     opsRole.updatedAt = now
     await putRole(kv, opsRole)
+    touched = true
   }
 
   const ids = await readIndex(kv)
   const next = new Set(ids)
+  const before = next.size
   next.add(SYSTEM_ROLE_SUPER_ID)
-  next.add(SYSTEM_ROLE_OPS_ID)
-  await writeIndex(kv, [...next])
+  if (opsRole) next.add(SYSTEM_ROLE_OPS_ID)
+  if (touched || next.size !== before || !ids.includes(SYSTEM_ROLE_SUPER_ID)) {
+    await writeIndex(kv, [...next])
+  }
 }
 
 export async function createRole(
@@ -253,12 +285,14 @@ export async function updateRole(
   if (!role) return { ok: false, error: 'not_found' }
 
   if (role.system && id === SYSTEM_ROLE_SUPER_ID) {
-    // super: only allow remark/name tweak; menus always full
+    // system admin role: only allow remark/name tweak; menus always full
     if (patch.name !== undefined) role.name = patch.name.trim() || role.name
     if (patch.remark !== undefined) role.remark = patch.remark.trim()
+    role.code = 'admin'
     role.menus = listAllMenuKeys()
     role.buttons = listAllButtonKeys()
     role.dataScope = 'all'
+    await kv.put(codeKey('admin'), role.id)
   } else {
     if (patch.name !== undefined) role.name = patch.name.trim() || role.name
     if (patch.remark !== undefined) role.remark = patch.remark.trim()

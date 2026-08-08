@@ -11,6 +11,7 @@ import { activateMembership, getUser } from '../lib/users'
 import { generateOrderId } from '../lib/order-id'
 import { xunhuHash } from '../lib/xunhupay'
 import type { OrderRecord } from '../lib/orders'
+import { saveOrder } from '../lib/orders'
 import { safeWriteIntegrationLog } from '../lib/integration-logs'
 
 export const payRoutes = new Hono<AppEnv>()
@@ -60,18 +61,14 @@ payRoutes.post('/create', async (c) => {
     type: 'paid',
     createdAt: new Date().toISOString(),
   }
-  await c.env.KV.put(`order:${orderId}`, JSON.stringify(order), {
-    expirationTtl: 60 * 60 * 24 * 7,
-  })
+  await saveOrder(c.env.KV, order, { expirationTtl: 60 * 60 * 24 * 7 })
 
   // Free tier: activate immediately, no payment
   if (tier === 'free' || totalFee === '0.00' || totalFee === '0') {
     order.status = ORDER_STATUS.paid
     order.type = 'free'
     order.paidAt = new Date().toISOString()
-    await c.env.KV.put(`order:${orderId}`, JSON.stringify(order), {
-      expirationTtl: 60 * 60 * 24 * 7,
-    })
+    await saveOrder(c.env.KV, order, { expirationTtl: 60 * 60 * 24 * 7 })
     const user = await activateMembership(c.env.KV, session.sub, tier)
     return c.json({
       ok: true,
@@ -90,9 +87,7 @@ payRoutes.post('/create', async (c) => {
 
   if (!appid || !secret) {
     order.type = 'mock'
-    await c.env.KV.put(`order:${orderId}`, JSON.stringify(order), {
-      expirationTtl: 60 * 60 * 24 * 7,
-    })
+    await saveOrder(c.env.KV, order, { expirationTtl: 60 * 60 * 24 * 7 })
     return c.json({
       ok: true,
       mode: 'mock',
@@ -182,7 +177,7 @@ payRoutes.post('/mock-complete', async (c) => {
 
   order.status = ORDER_STATUS.paid
   order.paidAt = new Date().toISOString()
-  await c.env.KV.put(`order:${orderId}`, JSON.stringify(order))
+  await saveOrder(c.env.KV, order)
   const user = await activateMembership(c.env.KV, order.userId, order.tier)
 
   return c.json({ ok: true, order, user })
@@ -317,13 +312,13 @@ payRoutes.post('/notify', async (c) => {
     order.paidAt = new Date().toISOString()
     order.callbackAt = new Date().toISOString()
     order.callbackPayload = params
-    await c.env.KV.put(`order:${orderId}`, JSON.stringify(order))
+    await saveOrder(c.env.KV, order)
     await activateMembership(c.env.KV, order.userId, order.tier)
   } else {
     // Keep last notify for debugging even if not paid yet
     order.callbackAt = new Date().toISOString()
     order.callbackPayload = params
-    await c.env.KV.put(`order:${orderId}`, JSON.stringify(order))
+    await saveOrder(c.env.KV, order)
   }
 
   await safeWriteIntegrationLog(c.env.KV, {

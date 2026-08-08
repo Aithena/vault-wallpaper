@@ -76,7 +76,7 @@ const router = useRouter()
 const route = useRoute()
 
 const mode = ref<'login' | 'reset'>('login')
-const username = ref('admin')
+const username = ref('')
 const password = ref('')
 const resetEmail = ref('')
 const resetCode = ref('')

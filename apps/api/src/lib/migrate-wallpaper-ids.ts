@@ -1,6 +1,7 @@
 import {
   getWallpaper,
   listWallpapers,
+  invalidatePublicCatalogSnapshot,
   type WallpaperRecord,
 } from './wallpaper-catalog'
 import { isNanoidWallpaperId, newWallpaperId } from './wallpaper-id'
@@ -153,6 +154,7 @@ export async function migrateWallpaperIdsIfNeeded(
 
   await rewriteWallpaperIdRefs(kv, mapping)
   await kv.put(FLAG_KEY, '1')
+  await invalidatePublicCatalogSnapshot(kv)
 
   return {
     migrated: mapping.size,

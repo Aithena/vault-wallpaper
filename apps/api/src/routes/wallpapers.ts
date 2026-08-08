@@ -4,10 +4,7 @@ import { canAccessTier } from '../lib/catalog'
 import {
   ensureSeedCatalog,
   getWallpaper,
-  listPublishedWallpapers,
-  toPublicWallpaper,
-  listCategories,
-  listTags,
+  getPublicCatalogSnapshot,
 } from '../lib/wallpaper-catalog'
 import { migrateWallpaperIdsIfNeeded } from '../lib/migrate-wallpaper-ids'
 import { getPreviewObject, originalKey } from '../lib/r2-wallpaper'
@@ -22,23 +19,11 @@ export const wallpaperRoutes = new Hono<AppEnv>()
 wallpaperRoutes.get('/', async (c) => {
   await ensureSeedCatalog(c.env.KV)
   await migrateWallpaperIdsIfNeeded(c.env.KV, c.env.R2)
-  const [items, cats, tags] = await Promise.all([
-    listPublishedWallpapers(c.env.KV),
-    listCategories(c.env.KV),
-    listTags(c.env.KV),
-  ])
-  const catMap = new Map(cats.map((c) => [c.id, c.name]))
-  const tagMap = new Map(tags.map((t) => [t.id, t.name]))
+  const snap = await getPublicCatalogSnapshot(c.env.KV)
   return c.json({
-    items: items.map((w) =>
-      toPublicWallpaper(
-        w,
-        w.categoryId ? catMap.get(w.categoryId) : null,
-        w.tagIds.map((id) => tagMap.get(id)).filter(Boolean) as string[],
-      ),
-    ),
-    categories: cats,
-    tags,
+    items: snap.items,
+    categories: snap.categories,
+    tags: snap.tags,
   })
 })
 

@@ -44,7 +44,7 @@ export function startPresenceHeartbeat() {
   void sendPresence(typeof location !== 'undefined' ? location.pathname : undefined)
   heartbeatTimer = setInterval(() => {
     void sendPresence()
-  }, 90_000)
+  }, 4 * 60_000)
 }
 
 export function stopPresenceHeartbeat() {

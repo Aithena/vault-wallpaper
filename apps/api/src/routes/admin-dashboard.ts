@@ -3,21 +3,18 @@ import type { AppEnv } from '../types'
 import { requireAdmin } from '../lib/admin-auth'
 import { requireAnyMenu, requireMenu, actorPerms } from '../lib/admin-perm'
 import { listAudits } from '../lib/audit'
-import { listAiUsage, summarizeAiUsage } from '../lib/ai-usage'
 import { getVisitorDayStats } from '../lib/visitors'
-import { listDownloads } from '../lib/downloads'
 import { listOrders } from '../lib/orders'
-import { isUserMembershipActive, listUsers } from '../lib/users'
 import {
-  ensureSeedCatalog,
-  listWallpapers,
-} from '../lib/wallpaper-catalog'
-import { filterOwned, getActorScope, assertOwned } from '../lib/admin-scope'
+  buildDayKeys,
+  inDateRange,
+  resolveDateRange,
+} from '../lib/date-range'
+import { getActorScope, assertOwned } from '../lib/admin-scope'
 import {
-  ensureAdminTodo,
+  countUnreadTodos,
   listTodos,
   markTodoRead,
-  resolveTodosForWallpaper,
   type AdminTodoRecord,
 } from '../lib/admin-todos'
 
@@ -44,7 +41,16 @@ adminDashboardRoutes.get('/finance', async (c) => {
   const denied = await requireAnyMenu(c, ['orders.finance', 'dashboard.overview'])
   if (denied) return denied
 
-  const orders = await listOrders(c.env.KV)
+  const range = resolveDateRange({
+    days: c.req.query('days'),
+    dateFrom: c.req.query('dateFrom'),
+    dateTo: c.req.query('dateTo'),
+  })
+  if (!range.ok) return c.json({ error: range.error }, 400)
+
+  const orders = (await listOrders(c.env.KV)).filter((o) =>
+    inDateRange(o.paidAt || o.createdAt, range.from, range.to),
+  )
   const paid = orders.filter((o) => o.status === 'paid')
 
   const summary = {
@@ -57,20 +63,17 @@ adminDashboardRoutes.get('/finance', async (c) => {
     adminGrantCount: paid.filter((o) => orderType(o) === 'admin_grant').length,
   }
 
-  const today = new Date()
-  const dayKeys: string[] = []
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(today)
-    d.setUTCDate(d.getUTCDate() - i)
-    dayKeys.push(d.toISOString().slice(0, 10))
-  }
-
+  const dayKeys = buildDayKeys(range.from, range.to)
   const trend = dayKeys.map((date) => {
-    const dayPaid = paid.filter((o) => (o.paidAt || o.createdAt).slice(0, 10) === date)
+    const dayPaid = paid.filter(
+      (o) => (o.paidAt || o.createdAt).slice(0, 10) === date,
+    )
     const dayRevenue = dayPaid.filter((o) => countsRevenue(orderType(o)))
     return {
       date,
-      revenue: dayRevenue.reduce((sum, o) => sum + Number(o.totalFee || 0), 0).toFixed(2),
+      revenue: dayRevenue
+        .reduce((sum, o) => sum + Number(o.totalFee || 0), 0)
+        .toFixed(2),
       paidCount: dayPaid.length,
     }
   })
@@ -93,72 +96,59 @@ adminDashboardRoutes.get('/finance', async (c) => {
     }))
     .sort((a, b) => b.count - a.count)
 
-  return c.json({ summary, trend, byTier })
+  return c.json({
+    summary,
+    trend,
+    byTier,
+    range: { from: range.from, to: range.to, days: range.days },
+  })
 })
 
 adminDashboardRoutes.get('/overview', async (c) => {
   const denied = await requireMenu(c, 'dashboard.overview')
   if (denied) return denied
 
-  await ensureSeedCatalog(c.env.KV)
-  const [users, orders, wallpapers, downloads, audits, aiUsage, visitorTrend] =
-    await Promise.all([
-      listUsers(c.env.KV),
-      listOrders(c.env.KV),
-      listWallpapers(c.env.KV),
-      listDownloads(c.env.KV, 1000),
-      listAudits(c.env.KV, 8),
-      listAiUsage(c.env.KV, 2000),
-      getVisitorDayStats(c.env.KV, 1),
-    ])
+  const { ensureDashboardStats } = await import('../lib/dashboard-stats')
+  const [stats, audits, visitorTrend] = await Promise.all([
+    ensureDashboardStats(c.env.KV),
+    listAudits(c.env.KV, 8),
+    getVisitorDayStats(c.env.KV, 1),
+  ])
 
   const today = todayKey()
-  const paidMembers = users.filter(
-    (u) => isUserMembershipActive(u) && u.memberTier && u.memberTier !== 'free',
-  )
-  const ordersToday = orders.filter((o) => dayKey(o.createdAt) === today)
-  const paidOrders = orders.filter((o) => o.status === 'paid')
-  const revenue = paidOrders
-    .filter((o) => (o.type ?? 'paid') === 'paid' || o.type === 'mock')
-    .reduce((sum, o) => sum + Number(o.totalFee || 0), 0)
-  const revenueToday = paidOrders
-    .filter(
-      (o) =>
-        dayKey(o.paidAt || o.createdAt) === today &&
-        ((o.type ?? 'paid') === 'paid' || o.type === 'mock'),
-    )
-    .reduce((sum, o) => sum + Number(o.totalFee || 0), 0)
-
-  const downloadsToday = downloads.filter((d) => dayKey(d.createdAt) === today)
-  const aiSummary = summarizeAiUsage(aiUsage, today)
   const visitorToday = visitorTrend.find((d) => d.date === today) || {
     uv: 0,
     pv: 0,
   }
 
+  const avgDurationMs =
+    stats.aiSuccessCount > 0
+      ? Math.round(stats.aiDurationSumMs / stats.aiSuccessCount)
+      : 0
+
   return c.json({
     overview: {
-      usersTotal: users.length,
-      usersDisabled: users.filter((u) => u.accountStatus === 'disabled').length,
-      usersBlacklisted: users.filter((u) => u.blacklisted).length,
-      paidMembers: paidMembers.length,
-      ordersTotal: orders.length,
-      ordersToday: ordersToday.length,
-      ordersPaid: paidOrders.length,
-      ordersPending: orders.filter((o) => o.status === 'pending').length,
-      revenueTotal: revenue.toFixed(2),
-      revenueToday: revenueToday.toFixed(2),
-      wallpapersTotal: wallpapers.length,
-      wallpapersPending: wallpapers.filter((w) => w.status === 'pending').length,
-      wallpapersPublished: wallpapers.filter((w) => w.status === 'published').length,
-      downloadsTotal: downloads.length,
-      downloadsToday: downloadsToday.length,
-      downloadsSuccessToday: downloadsToday.filter((d) => d.success).length,
-      aiTotal: aiSummary.total,
-      aiToday: aiSummary.todayTotal,
-      aiSuccessToday: aiSummary.todaySuccess,
-      aiFailedToday: aiSummary.todayFailed,
-      aiAvgDurationMs: aiSummary.avgDurationMs,
+      usersTotal: stats.usersTotal,
+      usersDisabled: stats.usersDisabled,
+      usersBlacklisted: stats.usersBlacklisted,
+      paidMembers: stats.paidMembers,
+      ordersTotal: stats.ordersTotal,
+      ordersToday: stats.ordersToday,
+      ordersPaid: stats.ordersPaid,
+      ordersPending: stats.ordersPending,
+      revenueTotal: stats.revenueTotal.toFixed(2),
+      revenueToday: stats.revenueToday.toFixed(2),
+      wallpapersTotal: stats.wallpapersTotal,
+      wallpapersPending: stats.wallpapersPending,
+      wallpapersPublished: stats.wallpapersPublished,
+      downloadsTotal: stats.downloadsTotal,
+      downloadsToday: stats.downloadsToday,
+      downloadsSuccessToday: stats.downloadsSuccessToday,
+      aiTotal: stats.aiTotal,
+      aiToday: stats.aiToday,
+      aiSuccessToday: stats.aiSuccessToday,
+      aiFailedToday: stats.aiFailedToday,
+      aiAvgDurationMs: avgDurationMs,
       visitorsUvToday: visitorToday.uv,
       visitorsPvToday: visitorToday.pv,
     },
@@ -184,47 +174,6 @@ export type AdminNotificationItem = {
   readAt?: string | null
 }
 
-async function reconcileTodosForPending(
-  kv: KVNamespace,
-  pending: { id: string; title: string; createdByAdminId?: string; aiStatus?: string }[],
-) {
-  const pendingIds = new Set(pending.map((w) => w.id))
-  const open = (await listTodos(kv, 2000)).filter((t) => !t.resolvedAt)
-
-  // Resolve todos whose wallpaper is no longer pending
-  for (const t of open) {
-    if (!pendingIds.has(t.wallpaperId)) {
-      await resolveTodosForWallpaper(kv, t.wallpaperId)
-    }
-  }
-
-  // Backfill missing todos without bumping unread
-  for (const w of pending) {
-    await ensureAdminTodo(kv, {
-      type: 'wallpaper_pending',
-      wallpaperId: w.id,
-      wallpaperTitle: w.title,
-      createdByAdminId: w.createdByAdminId,
-    })
-    const ai = w.aiStatus ?? 'idle'
-    if (ai === 'failed') {
-      await ensureAdminTodo(kv, {
-        type: 'ai_failed',
-        wallpaperId: w.id,
-        wallpaperTitle: w.title,
-        createdByAdminId: w.createdByAdminId,
-      })
-    } else if (ai === 'ready') {
-      await ensureAdminTodo(kv, {
-        type: 'ai_ready',
-        wallpaperId: w.id,
-        wallpaperTitle: w.title,
-        createdByAdminId: w.createdByAdminId,
-      })
-    }
-  }
-}
-
 function todoToItem(t: AdminTodoRecord): AdminNotificationItem {
   return {
     id: t.id,
@@ -239,6 +188,25 @@ function todoToItem(t: AdminTodoRecord): AdminNotificationItem {
   }
 }
 
+function filterScopedTodos(
+  todos: AdminTodoRecord[],
+  scope: 'all' | 'self',
+  adminId: string,
+) {
+  return todos.filter((t) => {
+    if (t.resolvedAt) return false
+    if (scope === 'self' && t.createdByAdminId && t.createdByAdminId !== adminId) {
+      return false
+    }
+    return true
+  })
+}
+
+/**
+ * Notifications are event-driven (todos written on wallpaper/AI paths).
+ * - mode=badge (default for poll): unread counts only, no wallpaper list / reconcile
+ * - mode=full: return unread items for the bell panel
+ */
 adminDashboardRoutes.get('/notifications', async (c) => {
   const { role } = await actorPerms(c)
   const canWallpapers = Boolean(role?.menus.includes('wallpapers.list'))
@@ -246,36 +214,40 @@ adminDashboardRoutes.get('/notifications', async (c) => {
     return c.json({ badge: 0, unread: 0, items: [] as AdminNotificationItem[] })
   }
 
-  await ensureSeedCatalog(c.env.KV)
+  const mode = (c.req.query('mode') || 'badge').toLowerCase()
   const { admin, scope } = await getActorScope(c)
-  const wallpapers = filterOwned(await listWallpapers(c.env.KV), scope, admin.id)
-  const pending = wallpapers.filter((w) => w.status === 'pending')
 
-  await reconcileTodosForPending(c.env.KV, pending)
+  if (mode !== 'full') {
+    const { unread, pendingType } = await countUnreadTodos(c.env.KV, {
+      limit: 500,
+      scope,
+      adminId: admin.id,
+    })
+    return c.json({
+      badge: pendingType,
+      unread,
+      items: [] as AdminNotificationItem[],
+      counts: {
+        pending: pendingType,
+      },
+    })
+  }
 
-  const ownedPendingIds = new Set(pending.map((w) => w.id))
-  const todos = (await listTodos(c.env.KV, 500)).filter((t) => {
-    if (t.resolvedAt) return false
-    if (!ownedPendingIds.has(t.wallpaperId)) return false
-    if (scope === 'self' && t.createdByAdminId && t.createdByAdminId !== admin.id) {
-      return false
-    }
-    return !t.readAt
-  })
-
-  const items = todos.slice(0, 50).map(todoToItem)
-  const badge = pending.length
-  const aiFailed = pending.filter((w) => (w.aiStatus ?? 'idle') === 'failed').length
-  const aiReady = pending.filter((w) => (w.aiStatus ?? 'idle') === 'ready').length
+  const todos = filterScopedTodos(
+    await listTodos(c.env.KV, 500),
+    scope,
+    admin.id,
+  )
+  const unreadTodos = todos.filter((t) => !t.readAt)
+  const items = unreadTodos.slice(0, 50).map(todoToItem)
+  const pendingType = todos.filter((t) => t.type === 'wallpaper_pending').length
 
   return c.json({
-    badge,
-    unread: items.length,
+    badge: pendingType,
+    unread: unreadTodos.length,
     items,
     counts: {
-      pending: pending.length,
-      aiFailed,
-      aiReady,
+      pending: pendingType,
     },
   })
 })
@@ -300,16 +272,10 @@ adminDashboardRoutes.post('/notifications/read-all', async (c) => {
   if (!canWallpapers) return c.json({ error: 'forbidden' }, 403)
 
   const { admin, scope } = await getActorScope(c)
-  const wallpapers = filterOwned(await listWallpapers(c.env.KV), scope, admin.id)
-  const pendingIds = new Set(
-    wallpapers.filter((w) => w.status === 'pending').map((w) => w.id),
-  )
-  const todos = await listTodos(c.env.KV, 500)
+  const todos = filterScopedTodos(await listTodos(c.env.KV, 500), scope, admin.id)
   let n = 0
   for (const t of todos) {
-    if (t.resolvedAt || t.readAt) continue
-    if (!pendingIds.has(t.wallpaperId)) continue
-    if (!assertOwned(scope, admin.id, t.createdByAdminId)) continue
+    if (t.readAt) continue
     await markTodoRead(c.env.KV, t.id)
     n += 1
   }

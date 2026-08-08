@@ -2,9 +2,10 @@ import { Hono } from 'hono'
 import type { AppEnv } from '../types'
 import { requireAdmin } from '../lib/admin-auth'
 import { requireMenu } from '../lib/admin-perm'
+import { inDateRange, resolveDateRange } from '../lib/date-range'
 import { paginate, parsePageQuery } from '../lib/paging'
 import {
-  getVisitorDayStats,
+  getVisitorDayStatsRange,
   listVisitorPageviews,
   summarizeVisitorRows,
 } from '../lib/visitors'
@@ -16,14 +17,21 @@ adminVisitorsRoutes.get('/stats', async (c) => {
   const denied = await requireMenu(c, 'tools.visitors')
   if (denied) return denied
 
+  const range = resolveDateRange({
+    days: c.req.query('days'),
+    dateFrom: c.req.query('dateFrom'),
+    dateTo: c.req.query('dateTo'),
+  })
+  if (!range.ok) return c.json({ error: range.error }, 400)
+
   const q = c.req.query('q')?.trim().toLowerCase()
   const device = c.req.query('device')?.trim()
   const loggedIn = c.req.query('loggedIn')?.trim()
-  const dateFrom = c.req.query('dateFrom')?.trim()
-  const dateTo = c.req.query('dateTo')?.trim()
 
-  const all = await listVisitorPageviews(c.env.KV, 2000)
-  const trend = await getVisitorDayStats(c.env.KV, 14)
+  const all = (await listVisitorPageviews(c.env.KV, 2000)).filter((r) =>
+    inDateRange(r.at, range.from, range.to),
+  )
+  const trend = await getVisitorDayStatsRange(c.env.KV, range.from, range.to)
   const today = new Date().toISOString().slice(0, 10)
   const todayRows = all.filter((r) => r.at.slice(0, 10) === today)
   const summaryToday = summarizeVisitorRows(todayRows)
@@ -46,8 +54,6 @@ adminVisitorsRoutes.get('/stats', async (c) => {
         r.path.toLowerCase().includes(q),
     )
   }
-  if (dateFrom) rows = rows.filter((r) => r.at.slice(0, 10) >= dateFrom)
-  if (dateTo) rows = rows.filter((r) => r.at.slice(0, 10) <= dateTo)
 
   const { page, pageSize } = parsePageQuery(c.req.query())
   const paged = paginate(rows, page, pageSize)
@@ -69,5 +75,6 @@ adminVisitorsRoutes.get('/stats', async (c) => {
     total: paged.total,
     page: paged.page,
     pageSize: paged.pageSize,
+    range: { from: range.from, to: range.to, days: range.days },
   })
 })

@@ -18,7 +18,7 @@
           placement="bottom-end"
           :width="360"
           trigger="click"
-          @show="loadNotifications"
+          @show="loadNotificationPanel"
         >
           <template #reference>
             <el-badge :value="notifBadge" :hidden="!notifBadge" :max="99">
@@ -59,9 +59,9 @@
           </div>
         </el-popover>
         <el-dropdown trigger="click" @command="onCommand">
-          <div class="admin-chip">
-            <span class="admin-name">{{ profile?.name ?? '管理员' }}</span>
-            <span class="admin-user">{{ profile?.username ?? '—' }}</span>
+          <div class="admin-chip" :title="profile?.realName || undefined">
+            <span class="admin-name">{{ profile?.nickName ?? '管理员' }}</span>
+            <span class="admin-role">{{ profile?.roleCode ?? '—' }}</span>
             <el-icon><ArrowDown /></el-icon>
           </div>
           <template #dropdown>
@@ -110,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
@@ -158,7 +158,24 @@ const pendingCount = ref(0)
 const notifItems = ref<NotifItem[]>([])
 const notifLoading = ref(false)
 
-async function loadNotifications() {
+async function loadNotificationBadge() {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    return
+  }
+  try {
+    const data = await adminApi<{
+      badge: number
+      unread?: number
+      counts?: { pending: number }
+    }>('/api/admin/dashboard/notifications?mode=badge')
+    notifBadge.value = data.unread ?? 0
+    pendingCount.value = data.counts?.pending ?? data.badge ?? 0
+  } catch {
+    /* keep previous badge on transient errors */
+  }
+}
+
+async function loadNotificationPanel() {
   notifLoading.value = true
   try {
     const data = await adminApi<{
@@ -166,8 +183,7 @@ async function loadNotifications() {
       unread?: number
       items: NotifItem[]
       counts?: { pending: number }
-    }>('/api/admin/dashboard/notifications')
-    // 角标 = 未读事件提醒；pending 用现算校验展示
+    }>('/api/admin/dashboard/notifications?mode=full')
     notifBadge.value = data.unread ?? data.items.length
     pendingCount.value = data.counts?.pending ?? data.badge ?? 0
     notifItems.value = data.items
@@ -209,10 +225,18 @@ onMounted(() => {
   void refreshAdminMe().then((admin) => {
     if (admin) profile.value = admin
   })
-  void loadNotifications()
-  window.setInterval(() => {
-    void loadNotifications()
-  }, 60_000)
+  void loadNotificationBadge()
+  const timer = window.setInterval(() => {
+    void loadNotificationBadge()
+  }, 5 * 60_000)
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') void loadNotificationBadge()
+  }
+  document.addEventListener('visibilitychange', onVisibility)
+  onUnmounted(() => {
+    window.clearInterval(timer)
+    document.removeEventListener('visibilitychange', onVisibility)
+  })
 })
 
 const visibleMenu = computed(() => filterMenuByPermissions(profile.value?.menus))
@@ -315,8 +339,13 @@ function onCommand(cmd: string) {
   font-weight: 600;
 }
 
-.admin-user {
+.admin-role {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--admin-soft, #f0f2f5);
   color: var(--admin-muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .area-b {

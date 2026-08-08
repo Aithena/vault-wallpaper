@@ -69,8 +69,7 @@ meRoutes.post('/track', async (c) => {
     wallpaperId: body.wallpaperId,
   })
   if (!session) return c.json({ error: 'session_not_found' }, 404)
-  // keep presence warm while browsing
-  await touchPresence(c.env.KV, user, body.path)
+  // Presence is refreshed by the dedicated heartbeat; avoid double KV writes here.
   return c.json({
     ok: true,
     ended: Boolean(session.endedAt),

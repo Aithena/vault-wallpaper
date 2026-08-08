@@ -7,6 +7,7 @@ import { writeAudit } from '../lib/audit'
 import { isMembershipTierId } from '../lib/catalog'
 import { paginate, parsePageQuery } from '../lib/paging'
 import { getOrder, listOrders, saveOrder } from '../lib/orders'
+import { inDateRange, resolveDateRange } from '../lib/date-range'
 import {
   activateMembership,
   getUser,
@@ -41,24 +42,26 @@ function csvEscape(v: string | null | undefined) {
 adminOrdersRoutes.get('/', async (c) => {
   const denied = await requireMenu(c, 'orders.list')
   if (denied) return denied
+
+  const range = resolveDateRange({
+    days: c.req.query('days'),
+    dateFrom: c.req.query('dateFrom'),
+    dateTo: c.req.query('dateTo'),
+  })
+  if (!range.ok) return c.json({ error: range.error }, 400)
+
   const q = c.req.query('q')?.trim().toLowerCase()
   const status = c.req.query('status')?.trim()
   const type = c.req.query('type')?.trim()
-  const dateFrom = c.req.query('dateFrom')?.trim()
-  const dateTo = c.req.query('dateTo')?.trim()
 
-  let orders = await listOrders(c.env.KV)
+  let orders = (await listOrders(c.env.KV)).filter((o) =>
+    inDateRange(o.createdAt, range.from, range.to),
+  )
   if (status && status !== 'all') {
     orders = orders.filter((o) => o.status === status)
   }
   if (type && type !== 'all') {
     orders = orders.filter((o) => enrichType(o) === type)
-  }
-  if (dateFrom) {
-    orders = orders.filter((o) => o.createdAt.slice(0, 10) >= dateFrom)
-  }
-  if (dateTo) {
-    orders = orders.filter((o) => o.createdAt.slice(0, 10) <= dateTo)
   }
 
   const enriched = await Promise.all(
@@ -97,13 +100,24 @@ adminOrdersRoutes.get('/', async (c) => {
     total: paged.total,
     page: paged.page,
     pageSize: paged.pageSize,
+    range: { from: range.from, to: range.to, days: range.days },
   })
 })
 
 adminOrdersRoutes.get('/export', async (c) => {
   const denied = await requireButton(c, 'orders.list.export')
   if (denied) return denied
-  const orders = await listOrders(c.env.KV)
+
+  const range = resolveDateRange({
+    days: c.req.query('days'),
+    dateFrom: c.req.query('dateFrom'),
+    dateTo: c.req.query('dateTo'),
+  })
+  if (!range.ok) return c.json({ error: range.error }, 400)
+
+  const orders = (await listOrders(c.env.KV)).filter((o) =>
+    inDateRange(o.createdAt, range.from, range.to),
+  )
   const header = [
     'id',
     'userEmail',

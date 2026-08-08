@@ -19,12 +19,18 @@
 
       <el-table :data="rows" stripe border>
         <el-table-column prop="username" label="用户名" width="120" />
-        <el-table-column prop="name" label="名称" width="120" />
+        <el-table-column prop="nickName" label="昵称" width="120" />
+        <el-table-column prop="realName" label="真实姓名" width="120">
+          <template #default="{ row }">{{ row.realName || '—' }}</template>
+        </el-table-column>
         <el-table-column label="绑定邮箱" min-width="160">
           <template #default="{ row }">{{ row.email || '—' }}</template>
         </el-table-column>
-        <el-table-column label="角色" width="120">
-          <template #default="{ row }">{{ row.roleName }}</template>
+        <el-table-column label="角色" width="140">
+          <template #default="{ row }">
+            {{ row.roleName }}
+            <span class="role-code">{{ row.roleCode }}</span>
+          </template>
         </el-table-column>
         <el-table-column label="数据权限" width="110">
           <template #default="{ row }">{{ dataScopeLabel(row.dataScope) }}</template>
@@ -87,8 +93,11 @@
         <el-form-item label="用户名" required>
           <el-input v-model="createForm.username" placeholder="小写字母开头" />
         </el-form-item>
-        <el-form-item label="名称">
-          <el-input v-model="createForm.name" />
+        <el-form-item label="昵称">
+          <el-input v-model="createForm.nickName" placeholder="默认用用户名" />
+        </el-form-item>
+        <el-form-item label="真实姓名">
+          <el-input v-model="createForm.realName" />
         </el-form-item>
         <el-form-item label="密码" required>
           <el-input v-model="createForm.password" type="password" show-password />
@@ -126,8 +135,11 @@
         <el-form-item label="用户名">
           <el-input v-model="editForm.username" />
         </el-form-item>
-        <el-form-item label="名称">
-          <el-input v-model="editForm.name" />
+        <el-form-item label="昵称">
+          <el-input v-model="editForm.nickName" />
+        </el-form-item>
+        <el-form-item label="真实姓名">
+          <el-input v-model="editForm.realName" />
         </el-form-item>
         <el-form-item label="角色">
           <el-select v-model="editForm.roleId" style="width: 100%">
@@ -214,7 +226,8 @@ const emailVisible = ref(false)
 
 const createForm = reactive({
   username: '',
-  name: '',
+  nickName: '',
+  realName: '',
   password: '',
   email: '',
   roleId: SYSTEM_ROLE_OPS_ID,
@@ -224,7 +237,8 @@ const createForm = reactive({
 const editForm = reactive({
   id: '',
   username: '',
-  name: '',
+  nickName: '',
+  realName: '',
   roleId: SYSTEM_ROLE_OPS_ID,
   dataScope: 'follow_role' as AdminDataScopeOverride,
 })
@@ -267,12 +281,20 @@ async function load() {
   }
 }
 
+function defaultRoleId() {
+  const ops = roleOptions.value.find((r) => r.id === SYSTEM_ROLE_OPS_ID)
+  if (ops) return ops.id
+  const nonSuper = roleOptions.value.find((r) => r.id !== SYSTEM_ROLE_SUPER_ID)
+  return nonSuper?.id || roleOptions.value[0]?.id || ''
+}
+
 function openCreate() {
   createForm.username = ''
-  createForm.name = ''
+  createForm.nickName = ''
+  createForm.realName = ''
   createForm.password = ''
   createForm.email = ''
-  createForm.roleId = SYSTEM_ROLE_OPS_ID
+  createForm.roleId = defaultRoleId()
   createForm.dataScope = 'follow_role'
   createVisible.value = true
 }
@@ -280,7 +302,8 @@ function openCreate() {
 function openEdit(row: AdminPublic) {
   editForm.id = row.id
   editForm.username = row.username
-  editForm.name = row.name
+  editForm.nickName = row.nickName
+  editForm.realName = row.realName || ''
   editForm.roleId = row.roleId
   editForm.dataScope = row.dataScope
   editVisible.value = true
@@ -307,7 +330,8 @@ async function submitCreate() {
       method: 'POST',
       body: JSON.stringify({
         username: createForm.username,
-        name: createForm.name || createForm.username,
+        nickName: createForm.nickName || createForm.username,
+        realName: createForm.realName,
         password: createForm.password,
         email: createForm.email || null,
         roleId: createForm.roleId,
@@ -331,7 +355,8 @@ async function submitEdit() {
     await adminApi(`/api/admin/admins/${editForm.id}`, {
       method: 'PATCH',
       body: JSON.stringify({
-        name: editForm.name,
+        nickName: editForm.nickName,
+        realName: editForm.realName,
         username: editForm.username,
         roleId: editForm.roleId,
         dataScope: editForm.dataScope,
@@ -408,3 +433,11 @@ onMounted(() => {
   void load()
 })
 </script>
+
+<style scoped>
+.role-code {
+  margin-left: 6px;
+  color: var(--admin-muted, #909399);
+  font-size: 12px;
+}
+</style>

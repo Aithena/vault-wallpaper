@@ -338,6 +338,7 @@ export type AdminStatus = (typeof ADMIN_STATUS)[keyof typeof ADMIN_STATUS]
 
 /** @deprecated 兼容旧字段；新逻辑用 roleId */
 export const ADMIN_ROLES = {
+  /** legacy admin.role value; role code is now `admin` */
   super: 'super',
   ops: 'ops',
 } as const
@@ -348,7 +349,10 @@ export type AdminRole = (typeof ADMIN_ROLES)[keyof typeof ADMIN_ROLES]
 export type AdminPublic = {
   id: string
   username: string
-  name: string
+  /** 昵称（界面展示） */
+  nickName: string
+  /** 真实姓名 */
+  realName: string
   email: string | null
   roleId: string
   roleName: string

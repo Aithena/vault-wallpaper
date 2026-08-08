@@ -45,36 +45,68 @@ async function writeIndex(kv: KVNamespace, ids: string[]) {
   await kv.put(INDEX_KEY, JSON.stringify(ids.slice(0, MAX_INDEX)))
 }
 
+/** Min interval between presence KV writes when path/membership unchanged. */
+const PRESENCE_WRITE_MIN_MS = 3 * 60 * 1000
+
 export async function touchPresence(
   kv: KVNamespace,
   user: UserRecord,
   path?: string,
 ): Promise<PresenceRecord> {
-  const now = new Date().toISOString()
+  const nowMs = Date.now()
+  const now = new Date(nowMs).toISOString()
   const benefitStatus = resolveMemberBenefitStatus(user)
+  const nextPath = path?.slice(0, 200)
+  const existingRaw = await kv.get(presenceKey(user.id))
+  if (existingRaw) {
+    const prev = JSON.parse(existingRaw) as PresenceRecord
+    const prevTs = Date.parse(prev.lastSeenAt)
+    const samePath = (prev.path || '') === (nextPath || '')
+    const sameBenefit = normalizeBenefit(prev) === benefitStatus
+    const sameTier = (prev.memberTier || null) === (user.memberTier || null)
+    if (
+      Number.isFinite(prevTs) &&
+      nowMs - prevTs < PRESENCE_WRITE_MIN_MS &&
+      samePath &&
+      sameBenefit &&
+      sameTier
+    ) {
+      return {
+        ...prev,
+        benefitStatus,
+        membershipActive: benefitStatus === 'active',
+      }
+    }
+  }
+
   const record: PresenceRecord = {
     userId: user.id,
     email: user.email,
     memberTier: user.memberTier,
     membershipActive: benefitStatus === 'active',
     benefitStatus,
-    path: path?.slice(0, 200),
+    path: nextPath,
     lastSeenAt: now,
   }
   await kv.put(presenceKey(user.id), JSON.stringify(record))
+
+  // Rewrite index only when the user is absent from it (new or pruned after idle)
   const ids = await readIndex(kv)
-  const next = [user.id, ...ids.filter((id) => id !== user.id)]
-  await writeIndex(kv, next)
+  if (!ids.includes(user.id)) {
+    await writeIndex(kv, [user.id, ...ids])
+  }
   return record
 }
 
 export async function clearPresence(kv: KVNamespace, userId: string) {
   await kv.delete(presenceKey(userId))
   const ids = await readIndex(kv)
-  await writeIndex(
-    kv,
-    ids.filter((id) => id !== userId),
-  )
+  if (ids.includes(userId)) {
+    await writeIndex(
+      kv,
+      ids.filter((id) => id !== userId),
+    )
+  }
 }
 
 function normalizeBenefit(row: PresenceRecord): MemberBenefitStatus {
@@ -91,8 +123,13 @@ export async function listOnlinePresence(
   const ids = await readIndex(kv)
   const rows: PresenceRecord[] = []
   const keep: string[] = []
-  for (const id of ids) {
-    const raw = await kv.get(presenceKey(id))
+  const fetched = await Promise.all(
+    ids.map(async (id) => {
+      const raw = await kv.get(presenceKey(id))
+      return { id, raw }
+    }),
+  )
+  for (const { id, raw } of fetched) {
     if (!raw) continue
     const row = JSON.parse(raw) as PresenceRecord
     const ts = Date.parse(row.lastSeenAt)

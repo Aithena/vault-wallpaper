@@ -1,4 +1,4 @@
-/** Event-driven admin todos (reminders). Badge still uses live pending counts. */
+/** Event-driven admin todos (reminders). */
 
 export type AdminTodoType = 'wallpaper_pending' | 'ai_failed' | 'ai_ready'
 
@@ -21,6 +21,11 @@ const MAX_INDEX = 2000
 
 function todoKey(id: string) {
   return `admin_todo:${id}`
+}
+
+/** Open-todo pointer to avoid full-index scans on upsert. */
+function openPointerKey(type: AdminTodoType, wallpaperId: string) {
+  return `admin_todo_open:${type}:${wallpaperId}`
 }
 
 async function readIndex(kv: KVNamespace): Promise<string[]> {
@@ -55,12 +60,65 @@ export async function listTodos(
   limit = 500,
 ): Promise<AdminTodoRecord[]> {
   const ids = (await readIndex(kv)).slice(0, limit)
-  const rows: AdminTodoRecord[] = []
-  for (const id of ids) {
-    const raw = await kv.get(todoKey(id))
-    if (raw) rows.push(JSON.parse(raw) as AdminTodoRecord)
+  const rows = await Promise.all(
+    ids.map(async (id) => {
+      const raw = await kv.get(todoKey(id))
+      return raw ? (JSON.parse(raw) as AdminTodoRecord) : null
+    }),
+  )
+  return rows.filter((r): r is AdminTodoRecord => Boolean(r))
+}
+
+/** Count unread open todos without loading full records beyond limit. */
+export async function countUnreadTodos(
+  kv: KVNamespace,
+  opts?: {
+    limit?: number
+    scope?: 'all' | 'self'
+    adminId?: string
+  },
+): Promise<{ unread: number; pendingType: number }> {
+  const limit = opts?.limit ?? 500
+  const todos = await listTodos(kv, limit)
+  let unread = 0
+  let pendingType = 0
+  for (const t of todos) {
+    if (t.resolvedAt) continue
+    if (
+      opts?.scope === 'self' &&
+      opts.adminId &&
+      t.createdByAdminId &&
+      t.createdByAdminId !== opts.adminId
+    ) {
+      continue
+    }
+    if (t.type === 'wallpaper_pending') pendingType += 1
+    if (!t.readAt) unread += 1
   }
-  return rows
+  return { unread, pendingType }
+}
+
+async function findOpenTodo(
+  kv: KVNamespace,
+  type: AdminTodoType,
+  wallpaperId: string,
+): Promise<AdminTodoRecord | null> {
+  const pointer = await kv.get(openPointerKey(type, wallpaperId))
+  if (pointer) {
+    const todo = await getTodo(kv, pointer)
+    if (todo && !todo.resolvedAt && todo.type === type && todo.wallpaperId === wallpaperId) {
+      return todo
+    }
+  }
+  // Fallback once for legacy rows without pointer
+  const all = await listTodos(kv, MAX_INDEX)
+  const existing = all.find(
+    (t) => !t.resolvedAt && t.type === type && t.wallpaperId === wallpaperId,
+  )
+  if (existing) {
+    await kv.put(openPointerKey(type, wallpaperId), existing.id)
+  }
+  return existing ?? null
 }
 
 async function resolveMatching(
@@ -74,6 +132,7 @@ async function resolveMatching(
     if (!pred(t)) continue
     t.resolvedAt = now
     await putTodo(kv, t)
+    await kv.delete(openPointerKey(t.type, t.wallpaperId))
   }
 }
 
@@ -118,25 +177,37 @@ export async function upsertAdminTodo(
   }
   const d = defaults[input.type]
 
-  const all = await listTodos(kv, MAX_INDEX)
-  const existing = all.find(
-    (t) =>
-      !t.resolvedAt &&
-      t.type === input.type &&
-      t.wallpaperId === input.wallpaperId,
-  )
+  const existing = await findOpenTodo(kv, input.type, input.wallpaperId)
 
   const now = new Date().toISOString()
   if (existing) {
+    const nextTitle = input.title || d.title
+    const nextDesc = input.description || d.description
+    const nextPath = input.path || d.path
+    const nextCreatedBy = input.createdByAdminId ?? existing.createdByAdminId
+    const nextReadAt = bumpUnread ? null : existing.readAt
+    const nextCreatedAt = bumpUnread ? now : existing.createdAt
+
+    const unchanged =
+      existing.title === nextTitle &&
+      existing.description === nextDesc &&
+      existing.path === nextPath &&
+      existing.wallpaperTitle === title &&
+      existing.createdByAdminId === nextCreatedBy &&
+      (existing.readAt ?? null) === (nextReadAt ?? null) &&
+      existing.createdAt === nextCreatedAt
+
+    if (unchanged) return existing
+
     const next: AdminTodoRecord = {
       ...existing,
-      title: input.title || d.title,
-      description: input.description || d.description,
-      path: input.path || d.path,
+      title: nextTitle,
+      description: nextDesc,
+      path: nextPath,
       wallpaperTitle: title,
-      createdByAdminId: input.createdByAdminId ?? existing.createdByAdminId,
-      readAt: bumpUnread ? null : existing.readAt,
-      createdAt: bumpUnread ? now : existing.createdAt,
+      createdByAdminId: nextCreatedBy,
+      readAt: nextReadAt,
+      createdAt: nextCreatedAt,
     }
     await putTodo(kv, next)
     if (bumpUnread) {
@@ -161,6 +232,7 @@ export async function upsertAdminTodo(
     resolvedAt: null,
   }
   await putTodo(kv, record)
+  await kv.put(openPointerKey(input.type, input.wallpaperId), record.id)
   const ids = await readIndex(kv)
   ids.unshift(record.id)
   await writeIndex(kv, ids)

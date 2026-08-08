@@ -87,24 +87,41 @@ type DayBucket = {
   visitors: string[]
 }
 
+/** Skip rewriting the day bucket if this visitor already bumped within the window. */
+const DAY_BUMP_THROTTLE_SECONDS = 60
+
+function dayBumpThrottleKey(date: string, visitorId: string) {
+  return `visitors:day_bump:${date}:${visitorId}`
+}
+
 async function bumpDayStats(kv: KVNamespace, at: string, visitorId: string) {
   const date = dayKey(at)
+  const throttleKey = dayBumpThrottleKey(date, visitorId)
+  const throttled = await kv.get(throttleKey)
+  // Same visitor within the window: skip day-bucket rewrite (PV slightly under-counted).
+  if (throttled) return
+
   const key = `${DAY_STATS_PREFIX}${date}`
   const raw = await kv.get(key)
   let bucket: DayBucket = raw
     ? (JSON.parse(raw) as DayBucket)
     : { date, pv: 0, visitors: [] }
+
   bucket.pv += 1
   if (!bucket.visitors.includes(visitorId)) {
     bucket.visitors.push(visitorId)
-    // cap unique list size per day
     if (bucket.visitors.length > 8000) {
       bucket.visitors = bucket.visitors.slice(-8000)
     }
   }
   await kv.put(key, JSON.stringify(bucket), { expirationTtl: 60 * 60 * 24 * 90 })
+  await kv.put(throttleKey, '1', { expirationTtl: DAY_BUMP_THROTTLE_SECONDS })
 }
 
+/**
+ * Always bump day UV/PV. Persist per-pageview detail only for a sample
+ * (and always for logged-in users) to stay within free-tier write caps.
+ */
 export async function writeVisitorPageview(
   kv: KVNamespace,
   input: Omit<VisitorPageview, 'id' | 'at'> & { at?: string },
@@ -128,12 +145,29 @@ export async function writeVisitorPageview(
     userId: input.userId ?? null,
     email: input.email ?? null,
   }
-  await kv.put(pvKey(id), JSON.stringify(record))
-  const ids = await readIndex(kv)
-  ids.unshift(id)
-  await kv.put(INDEX_KEY, JSON.stringify(ids.slice(0, MAX_INDEX)))
+
   await bumpDayStats(kv, at, record.visitorId)
+
+  const keepDetail =
+    Boolean(record.userId) ||
+    hashSample(record.visitorId + record.path + at.slice(0, 16), 10)
+  if (keepDetail) {
+    await kv.put(pvKey(id), JSON.stringify(record))
+    const ids = await readIndex(kv)
+    ids.unshift(id)
+    await kv.put(INDEX_KEY, JSON.stringify(ids.slice(0, MAX_INDEX)))
+  }
+
   return record
+}
+
+/** Deterministic ~pct% sample from a string key. */
+function hashSample(key: string, pct: number): boolean {
+  let h = 0
+  for (let i = 0; i < key.length; i++) {
+    h = (h * 31 + key.charCodeAt(i)) >>> 0
+  }
+  return h % 100 < pct
 }
 
 export async function listVisitorPageviews(
@@ -153,12 +187,25 @@ export async function getVisitorDayStats(
   kv: KVNamespace,
   days = 14,
 ): Promise<{ date: string; pv: number; uv: number }[]> {
-  const today = new Date()
+  const to = new Date().toISOString().slice(0, 10)
+  const fromDate = new Date(`${to}T00:00:00.000Z`)
+  fromDate.setUTCDate(fromDate.getUTCDate() - (days - 1))
+  const from = fromDate.toISOString().slice(0, 10)
+  return getVisitorDayStatsRange(kv, from, to)
+}
+
+export async function getVisitorDayStatsRange(
+  kv: KVNamespace,
+  from: string,
+  to: string,
+): Promise<{ date: string; pv: number; uv: number }[]> {
   const out: { date: string; pv: number; uv: number }[] = []
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today)
-    d.setUTCDate(d.getUTCDate() - i)
-    const date = d.toISOString().slice(0, 10)
+  const start = Date.parse(`${from}T00:00:00.000Z`)
+  const end = Date.parse(`${to}T00:00:00.000Z`)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return out
+
+  for (let t = start; t <= end; t += 86400000) {
+    const date = new Date(t).toISOString().slice(0, 10)
     const raw = await kv.get(`${DAY_STATS_PREFIX}${date}`)
     if (!raw) {
       out.push({ date, pv: 0, uv: 0 })

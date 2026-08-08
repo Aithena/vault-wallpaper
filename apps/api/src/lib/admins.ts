@@ -13,13 +13,18 @@ export type AdminRecord = {
   id: string
   username: string
   passwordHash: string
-  name: string
+  /** 昵称（界面展示） */
+  nickName: string
+  /** 真实姓名 */
+  realName: string
   email: string | null
   roleId: string
   dataScope: AdminDataScopeOverride
   status: AdminStatus
   createdAt: string
   updatedAt: string
+  /** 旧字段，读取时迁移到 nickName */
+  name?: string
   /** 旧字段，读取时迁移 */
   role?: 'super' | 'ops'
 }
@@ -38,15 +43,28 @@ function emailKey(email: string) {
   return `admin_email:${email.trim().toLowerCase()}`
 }
 
-function migrateAdmin(raw: AdminRecord): AdminRecord {
-  if (raw.roleId) {
-    if (!raw.dataScope) raw.dataScope = 'follow_role'
-    return raw
+function migrateAdmin(raw: AdminRecord & { name?: string }): AdminRecord {
+  if (!raw.nickName) {
+    raw.nickName = (raw.name || raw.username || '').trim() || '管理员'
   }
-  const legacy = raw.role === 'ops' ? SYSTEM_ROLE_OPS_ID : SYSTEM_ROLE_SUPER_ID
-  raw.roleId = legacy
-  raw.dataScope = raw.dataScope ?? 'follow_role'
-  delete raw.role
+  if (raw.realName === undefined || raw.realName === null) {
+    raw.realName = ''
+  }
+  if (raw.name !== undefined) {
+    delete raw.name
+  }
+
+  if (!raw.roleId) {
+    const legacy = raw.role === 'ops' ? SYSTEM_ROLE_OPS_ID : SYSTEM_ROLE_SUPER_ID
+    raw.roleId = legacy
+  }
+  if (!raw.dataScope) {
+    raw.dataScope = 'follow_role'
+  }
+  if (raw.role !== undefined) {
+    delete raw.role
+  }
+
   return raw
 }
 
@@ -69,7 +87,8 @@ export function toAdminPublic(
   const base: AdminPublic = {
     id: admin.id,
     username: admin.username,
-    name: admin.name,
+    nickName: admin.nickName,
+    realName: admin.realName || '',
     email: admin.email,
     roleId: admin.roleId,
     roleName: role?.name ?? '—',
@@ -79,12 +98,13 @@ export function toAdminPublic(
     createdAt: admin.createdAt,
     updatedAt: admin.updatedAt,
   }
-  if (withPerms && role) {
-    base.menus = role.menus
-    base.buttons = role.buttons
-    base.effectiveDataScope = effectiveDataScope
+  if (!withPerms) return base
+  return {
+    ...base,
+    menus: role?.menus ?? [],
+    buttons: role?.buttons ?? [],
+    effectiveDataScope,
   }
-  return base
 }
 
 async function readIndex(kv: KVNamespace): Promise<string[]> {
@@ -108,11 +128,15 @@ export async function getAdmin(
 ): Promise<AdminRecord | null> {
   const raw = await kv.get(adminKey(id))
   if (!raw) return null
-  const admin = migrateAdmin(JSON.parse(raw) as AdminRecord)
-  // persist migration lazily
-  if (!(JSON.parse(raw) as AdminRecord).roleId) {
-    await putAdmin(kv, admin)
-  }
+  const parsed = JSON.parse(raw) as AdminRecord & { name?: string }
+  const needsPersist =
+    !parsed.nickName ||
+    parsed.realName === undefined ||
+    parsed.name !== undefined ||
+    !parsed.roleId ||
+    !parsed.dataScope
+  const admin = migrateAdmin(parsed)
+  if (needsPersist) await putAdmin(kv, admin)
   return admin
 }
 
@@ -136,11 +160,9 @@ export async function findAdminByEmail(
 
 export async function listAdmins(kv: KVNamespace): Promise<AdminRecord[]> {
   const ids = await readIndex(kv)
-  const rows: AdminRecord[] = []
-  for (const id of ids) {
-    const admin = await getAdmin(kv, id)
-    if (admin) rows.push(admin)
-  }
+  const rows = (
+    await Promise.all(ids.map((id) => getAdmin(kv, id)))
+  ).filter((admin): admin is AdminRecord => Boolean(admin))
   rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   return rows
 }
@@ -154,17 +176,24 @@ export async function countAdminsByRole(
 }
 
 async function putAdmin(kv: KVNamespace, admin: AdminRecord) {
-  const { role: _legacy, ...rest } = admin
+  const { role: _legacyRole, name: _legacyName, ...rest } = admin as AdminRecord & {
+    name?: string
+  }
   await kv.put(adminKey(admin.id), JSON.stringify(rest))
 }
+
+const ADMIN_NICK_MIGRATED_FLAG = 'admins:nick_realname_migrated_v1'
 
 export async function ensureDefaultAdmin(kv: KVNamespace): Promise<void> {
   await ensureDefaultRoles(kv)
   const ids = await readIndex(kv)
   if (ids.length > 0) {
-    // migrate existing rows
-    for (const id of ids) {
-      await getAdmin(kv, id)
+    const migrated = await kv.get(ADMIN_NICK_MIGRATED_FLAG)
+    if (!migrated) {
+      for (const id of ids) {
+        await getAdmin(kv, id)
+      }
+      await kv.put(ADMIN_NICK_MIGRATED_FLAG, '1')
     }
     return
   }
@@ -180,7 +209,8 @@ export async function ensureDefaultAdmin(kv: KVNamespace): Promise<void> {
     id: crypto.randomUUID(),
     username: 'admin',
     passwordHash: await hashPassword('admin123'),
-    name: '超级管理员',
+    nickName: '超管',
+    realName: '超级管理员',
     email: 'admin@awall.cc',
     roleId: SYSTEM_ROLE_SUPER_ID,
     dataScope: 'follow_role',
@@ -192,6 +222,7 @@ export async function ensureDefaultAdmin(kv: KVNamespace): Promise<void> {
   await kv.put(usernameKey(admin.username), admin.id)
   await kv.put(emailKey(admin.email!), admin.id)
   await writeIndex(kv, [admin.id])
+  await kv.put(ADMIN_NICK_MIGRATED_FLAG, '1')
 }
 
 export async function createAdmin(
@@ -199,7 +230,8 @@ export async function createAdmin(
   input: {
     username: string
     password: string
-    name: string
+    nickName?: string
+    realName?: string
     email?: string | null
     roleId: string
     dataScope?: AdminDataScopeOverride
@@ -235,7 +267,8 @@ export async function createAdmin(
     id: crypto.randomUUID(),
     username,
     passwordHash: await hashPassword(input.password),
-    name: input.name.trim() || username,
+    nickName: (input.nickName || '').trim() || username,
+    realName: (input.realName || '').trim(),
     email,
     roleId: role.id,
     dataScope: input.dataScope ?? 'follow_role',
@@ -257,7 +290,8 @@ export async function updateAdmin(
   kv: KVNamespace,
   id: string,
   patch: {
-    name?: string
+    nickName?: string
+    realName?: string
     username?: string
     email?: string | null
     roleId?: string
@@ -284,8 +318,11 @@ export async function updateAdmin(
     }
   }
 
-  if (patch.name !== undefined) {
-    admin.name = patch.name.trim() || admin.name
+  if (patch.nickName !== undefined) {
+    admin.nickName = patch.nickName.trim() || admin.nickName
+  }
+  if (patch.realName !== undefined) {
+    admin.realName = patch.realName.trim()
   }
 
   if (patch.roleId !== undefined) {
@@ -373,7 +410,6 @@ export async function loadAdminWithRole(
   kv: KVNamespace,
   admin: AdminRecord,
 ): Promise<{ admin: AdminRecord; role: RoleRecord | null }> {
-  await ensureDefaultRoles(kv)
   const role = await getRole(kv, admin.roleId)
   return { admin, role }
 }

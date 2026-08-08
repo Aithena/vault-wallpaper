@@ -4,9 +4,17 @@
       <div class="page-toolbar">
         <div>
           <h1>财务统计</h1>
-          <p class="sub">基于已支付订单汇总；含近 30 天营收趋势与分档位占比。</p>
+          <p class="sub">
+            基于已支付订单汇总；默认近 {{ days }} 天，最长可查 365 天。
+          </p>
         </div>
         <div class="actions">
+          <el-radio-group v-model="days" size="small" @change="load">
+            <el-radio-button :value="30">30 天</el-radio-button>
+            <el-radio-button :value="90">90 天</el-radio-button>
+            <el-radio-button :value="180">180 天</el-radio-button>
+            <el-radio-button :value="365">365 天</el-radio-button>
+          </el-radio-group>
           <el-button @click="load">刷新</el-button>
         </div>
       </div>
@@ -40,7 +48,7 @@
 
       <div class="charts">
         <section class="chart-section">
-          <h3 class="section-title">近 30 天营收趋势</h3>
+          <h3 class="section-title">近 {{ days }} 天营收趋势</h3>
           <VChart class="chart" :option="trendOption" autoresize />
         </section>
 
@@ -113,6 +121,7 @@ type TierStat = {
 }
 
 const loading = ref(false)
+const days = ref(30)
 const summary = ref<FinanceSummary>({
   paidCount: 0,
   revenue: '0.00',
@@ -235,12 +244,21 @@ async function load() {
       summary: FinanceSummary
       trend: TrendPoint[]
       byTier: TierStat[]
-    }>('/api/admin/dashboard/finance')
+      range?: { from: string; to: string; days: number }
+    }>(`/api/admin/dashboard/finance?days=${days.value}`)
     summary.value = data.summary
     trend.value = data.trend
     byTier.value = data.byTier
+    if (data.range?.days) days.value = data.range.days
   } catch (e) {
-    ElMessage.error(e instanceof ApiError ? e.code : '加载失败')
+    const code = e instanceof ApiError ? e.code : '加载失败'
+    ElMessage.error(
+      code === 'range_too_long'
+        ? '查询跨度不能超过 365 天'
+        : code === 'invalid_range' || code === 'invalid_date'
+          ? '日期范围无效'
+          : code,
+    )
   } finally {
     loading.value = false
   }

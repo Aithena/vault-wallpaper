@@ -10,22 +10,47 @@ export type DownloadRecord = {
   createdAt: string
 }
 
-const INDEX_KEY = 'downloads:index'
-const MAX_INDEX = 1000
+const RECENT_KEY = 'downloads:recent_v1'
+const MAX_RECENT = 1000
+const LEGACY_INDEX_KEY = 'downloads:index'
 
 function downloadKey(id: string) {
   return `download:${id}`
 }
 
-async function readIndex(kv: KVNamespace): Promise<string[]> {
-  const raw = await kv.get(INDEX_KEY)
-  if (!raw) return []
+async function readRecent(kv: KVNamespace): Promise<DownloadRecord[] | null> {
+  const raw = await kv.get(RECENT_KEY)
+  if (!raw) return null
   try {
-    const parsed = JSON.parse(raw) as string[]
-    return Array.isArray(parsed) ? parsed : []
+    const parsed = JSON.parse(raw) as DownloadRecord[]
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+async function migrateFromLegacy(kv: KVNamespace): Promise<DownloadRecord[]> {
+  const raw = await kv.get(LEGACY_INDEX_KEY)
+  if (!raw) return []
+  let ids: string[] = []
+  try {
+    ids = JSON.parse(raw) as string[]
+    if (!Array.isArray(ids)) ids = []
   } catch {
     return []
   }
+  const rows = (
+    await Promise.all(
+      ids.slice(0, MAX_RECENT).map(async (id) => {
+        const r = await kv.get(downloadKey(id))
+        return r ? (JSON.parse(r) as DownloadRecord) : null
+      }),
+    )
+  ).filter((r): r is DownloadRecord => Boolean(r))
+  if (rows.length) {
+    await kv.put(RECENT_KEY, JSON.stringify(rows.slice(0, MAX_RECENT)))
+  }
+  return rows
 }
 
 export async function writeDownload(
@@ -40,9 +65,8 @@ export async function writeDownload(
     error?: string
   },
 ): Promise<DownloadRecord> {
-  const id = crypto.randomUUID()
   const record: DownloadRecord = {
-    id,
+    id: crypto.randomUUID(),
     userId: input.userId,
     email: input.email,
     wallpaperId: input.wallpaperId,
@@ -52,10 +76,24 @@ export async function writeDownload(
     error: input.error,
     createdAt: new Date().toISOString(),
   }
-  await kv.put(downloadKey(id), JSON.stringify(record))
-  const ids = await readIndex(kv)
-  ids.unshift(id)
-  await kv.put(INDEX_KEY, JSON.stringify(ids.slice(0, MAX_INDEX)))
+  let items = await readRecent(kv)
+  if (!items) items = await migrateFromLegacy(kv)
+  items.unshift(record)
+  await kv.put(RECENT_KEY, JSON.stringify(items.slice(0, MAX_RECENT)))
+
+  try {
+    const { patchDashboardStats } = await import('./dashboard-stats')
+    await patchDashboardStats(kv, (s) => {
+      s.downloadsTotal += 1
+      if (record.createdAt.slice(0, 10) === s.day) {
+        s.downloadsToday += 1
+        if (record.success) s.downloadsSuccessToday += 1
+      }
+    })
+  } catch {
+    /* ignore */
+  }
+
   return record
 }
 
@@ -63,11 +101,7 @@ export async function listDownloads(
   kv: KVNamespace,
   limit = 200,
 ): Promise<DownloadRecord[]> {
-  const ids = (await readIndex(kv)).slice(0, limit)
-  const rows: DownloadRecord[] = []
-  for (const id of ids) {
-    const raw = await kv.get(downloadKey(id))
-    if (raw) rows.push(JSON.parse(raw) as DownloadRecord)
-  }
-  return rows
+  let items = await readRecent(kv)
+  if (!items) items = await migrateFromLegacy(kv)
+  return items.slice(0, limit)
 }
