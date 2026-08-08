@@ -33,8 +33,9 @@ adminVisitorsRoutes.get('/stats', async (c) => {
   )
   const trend = await getVisitorDayStatsRange(c.env.KV, range.from, range.to)
   const today = new Date().toISOString().slice(0, 10)
-  const todayRows = all.filter((r) => r.at.slice(0, 10) === today)
-  const summaryToday = summarizeVisitorRows(todayRows)
+  const todayBucket = trend.find((d) => d.date === today) || { uv: 0, pv: 0 }
+  const rangePv = trend.reduce((sum, d) => sum + d.pv, 0)
+  const rangeUvApprox = trend.reduce((sum, d) => sum + d.uv, 0)
   const summaryRecent = summarizeVisitorRows(all)
 
   let rows = all
@@ -60,12 +61,13 @@ adminVisitorsRoutes.get('/stats', async (c) => {
 
   return c.json({
     today: {
-      uv: summaryToday.uv,
-      pv: summaryToday.pv,
+      uv: todayBucket.uv,
+      pv: todayBucket.pv,
     },
     recent: {
-      uv: summaryRecent.uv,
-      pv: summaryRecent.pv,
+      // Prefer day-bucket totals for UV/PV; breakdowns still from detail rows.
+      uv: rangeUvApprox || summaryRecent.uv,
+      pv: rangePv || summaryRecent.pv,
       byCountry: summaryRecent.byCountry,
       byDevice: summaryRecent.byDevice,
       byPath: summaryRecent.byPath,

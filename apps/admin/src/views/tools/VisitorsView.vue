@@ -28,13 +28,13 @@
         </el-col>
         <el-col :xs="12" :sm="6">
           <div class="stat">
-            <div class="stat-label">近期样本 UV</div>
+            <div class="stat-label">区间 UV（按日合计）</div>
             <div class="stat-value">{{ recent.uv }}</div>
           </div>
         </el-col>
         <el-col :xs="12" :sm="6">
           <div class="stat">
-            <div class="stat-label">近期样本 PV</div>
+            <div class="stat-label">区间 PV</div>
             <div class="stat-value">{{ recent.pv }}</div>
           </div>
         </el-col>
@@ -42,11 +42,11 @@
 
       <div class="charts">
         <section class="chart-section">
-          <h3 class="section-title">近 14 天 UV / PV</h3>
+          <h3 class="section-title">区间 UV / PV 趋势</h3>
           <VChart class="chart" :option="trendOption" autoresize />
         </section>
         <section class="chart-section">
-          <h3 class="section-title">设备占比（近期样本）</h3>
+          <h3 class="section-title">设备占比（明细）</h3>
           <VChart class="chart" :option="devicePieOption" autoresize />
         </section>
       </div>

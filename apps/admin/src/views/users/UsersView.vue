@@ -77,7 +77,7 @@
         <el-table-column label="拉黑" width="80">
           <template #default="{ row }">{{ row.blacklisted ? '是' : '否' }}</template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="340">
+        <el-table-column label="操作" fixed="right" width="260">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row as UserRow)">详情</el-button>
             <el-button

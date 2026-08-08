@@ -89,9 +89,17 @@ type DayBucket = {
 
 /** Skip rewriting the day bucket if this visitor already bumped within the window. */
 const DAY_BUMP_THROTTLE_SECONDS = 60
+/** Guest detail rows: at most one per visitor in this window (first hit always kept). */
+const DETAIL_THROTTLE_GUEST_SECONDS = 120
+/** Logged-in detail rows: slightly denser, still capped. */
+const DETAIL_THROTTLE_USER_SECONDS = 45
 
 function dayBumpThrottleKey(date: string, visitorId: string) {
   return `visitors:day_bump:${date}:${visitorId}`
+}
+
+function detailThrottleKey(visitorId: string) {
+  return `visitors:detail_throttle:${visitorId}`
 }
 
 async function bumpDayStats(kv: KVNamespace, at: string, visitorId: string) {
@@ -119,8 +127,8 @@ async function bumpDayStats(kv: KVNamespace, at: string, visitorId: string) {
 }
 
 /**
- * Always bump day UV/PV. Persist per-pageview detail only for a sample
- * (and always for logged-in users) to stay within free-tier write caps.
+ * Day UV/PV always attempted (throttled per visitor).
+ * Detail list rows are throttled so guests still appear, without 1:1 writes per SPA hop.
  */
 export async function writeVisitorPageview(
   kv: KVNamespace,
@@ -148,26 +156,22 @@ export async function writeVisitorPageview(
 
   await bumpDayStats(kv, at, record.visitorId)
 
-  const keepDetail =
-    Boolean(record.userId) ||
-    hashSample(record.visitorId + record.path + at.slice(0, 16), 10)
-  if (keepDetail) {
+  const loggedIn = Boolean(record.userId)
+  const dKey = detailThrottleKey(record.visitorId)
+  const detailThrottled = await kv.get(dKey)
+  if (!detailThrottled) {
     await kv.put(pvKey(id), JSON.stringify(record))
     const ids = await readIndex(kv)
     ids.unshift(id)
     await kv.put(INDEX_KEY, JSON.stringify(ids.slice(0, MAX_INDEX)))
+    await kv.put(dKey, '1', {
+      expirationTtl: loggedIn
+        ? DETAIL_THROTTLE_USER_SECONDS
+        : DETAIL_THROTTLE_GUEST_SECONDS,
+    })
   }
 
   return record
-}
-
-/** Deterministic ~pct% sample from a string key. */
-function hashSample(key: string, pct: number): boolean {
-  let h = 0
-  for (let i = 0; i < key.length; i++) {
-    h = (h * 31 + key.charCodeAt(i)) >>> 0
-  }
-  return h % 100 < pct
 }
 
 export async function listVisitorPageviews(
