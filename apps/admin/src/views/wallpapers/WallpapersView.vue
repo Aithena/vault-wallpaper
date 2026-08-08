@@ -147,7 +147,7 @@
         <el-table-column label="更新时间" min-width="160">
           <template #default="{ row }">{{ row.updatedAt.replace('T', ' ').slice(0, 19) }}</template>
         </el-table-column>
-        <el-table-column label="操作" fixed="right" width="360">
+        <el-table-column label="操作" fixed="right" width="240">
           <template #default="{ row }">
             <el-button
               v-if="hasButton('wallpapers.list.edit') && row.status === 'pending'"
@@ -158,27 +158,28 @@
               审核确认
             </el-button>
             <el-button
-              v-if="hasButton('wallpapers.list.approve')"
+              v-if="
+                hasButton('wallpapers.list.approve') &&
+                row.status === 'pending' &&
+                row.hasOriginal
+              "
               link
               type="primary"
-              :disabled="row.status !== 'pending' || !row.hasOriginal"
               @click="setStatus(row as WallpaperRow, 'published')"
             >
               通过
             </el-button>
             <el-button
-              v-if="hasButton('wallpapers.list.reject')"
+              v-if="hasButton('wallpapers.list.reject') && row.status === 'pending'"
               link
               type="warning"
-              :disabled="row.status !== 'pending'"
               @click="reject(row as WallpaperRow)"
             >
               驳回
             </el-button>
             <el-button
-              v-if="hasButton('wallpapers.list.unpublish')"
+              v-if="hasButton('wallpapers.list.unpublish') && row.status === 'published'"
               link
-              :disabled="row.status !== 'published'"
               @click="setStatus(row as WallpaperRow, 'unpublished')"
             >
               下架
@@ -549,7 +550,7 @@ watch(
 <style scoped>
 .thumb {
   width: 56px;
-  height: 36px;
+  height: 56px;
   object-fit: cover;
   border-radius: 4px;
   display: block;

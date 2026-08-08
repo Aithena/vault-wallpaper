@@ -27,7 +27,7 @@ export type PermissionGroup = {
 export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   {
     key: 'dashboard',
-    label: '首页看板',
+    label: '看板',
     icon: 'home',
     menus: [
       {
@@ -41,7 +41,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   },
   {
     key: 'wallpapers',
-    label: '壁纸资源',
+    label: '资源',
     icon: 'image',
     menus: [
       {
@@ -90,7 +90,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   },
   {
     key: 'users',
-    label: '用户会员',
+    label: '用户',
     icon: 'users',
     menus: [
       {
@@ -126,7 +126,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   },
   {
     key: 'orders',
-    label: '订单财务',
+    label: '订单',
     icon: 'order',
     menus: [
       {
@@ -152,7 +152,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   },
   {
     key: 'settings',
-    label: '站点设置',
+    label: '站点',
     icon: 'settings',
     menus: [
       {
@@ -207,7 +207,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   },
   {
     key: 'tools',
-    label: '系统工具',
+    label: '工具',
     icon: 'tools',
     menus: [
       {

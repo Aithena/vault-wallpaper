@@ -4,14 +4,7 @@
       <div class="a-left">
         <div class="brand">
           <img class="brand-logo" src="/logo.svg" alt="awall" width="32" height="32" />
-          <span class="brand-text">Awall 管理后台</span>
         </div>
-        <el-input
-          class="quick-search"
-          placeholder="快捷入口（静态占位）"
-          :prefix-icon="Search"
-          clearable
-        />
       </div>
       <div class="a-right">
         <el-popover
@@ -83,14 +76,13 @@
           :class="{ active: activeGroup?.id === group.id }"
           @click="onPrimary(group)"
         >
-          <el-icon :size="20"><component :is="iconMap[group.icon]" /></el-icon>
-          <span>{{ group.label }}</span>
+          <el-icon :size="18"><component :is="iconMap[group.icon]" /></el-icon>
+          <span style="margin-left: 4px;">{{ group.label }}</span>
         </button>
       </nav>
 
       <div class="area-d">
         <aside class="area-e" aria-label="二级菜单">
-          <div class="e-title">{{ activeGroup?.label }}</div>
           <el-menu :default-active="activeChildPath" router>
             <el-menu-item
               v-for="child in activeGroup?.children ?? []"
@@ -284,9 +276,8 @@ function onCommand(cmd: string) {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 16px 0 12px;
-  border-bottom: 1px solid var(--admin-line);
-  background: rgba(255, 255, 255, 0.72);
+  padding: 0 16px 0 0;
+  background: transparent;
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -303,7 +294,9 @@ function onCommand(cmd: string) {
 .brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  width: var(--admin-c-width);
 }
 
 .brand-logo {
@@ -360,33 +353,28 @@ function onCommand(cmd: string) {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border-right: 1px solid var(--admin-line);
-  background: rgba(255, 255, 255, 0.45);
+  background: transparent;
 }
 
 .c-item {
   display: flex;
-  flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   padding: 10px 4px;
   border: none;
   border-radius: 10px;
   background: transparent;
   color: var(--admin-muted);
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.2;
   cursor: pointer;
-
   &:hover {
-    background: rgba(255, 255, 255, 0.7);
     color: var(--admin-text);
   }
 
   &.active {
-    background: #fff;
     color: var(--admin-accent);
-    box-shadow: 0 1px 2px rgba(27, 36, 48, 0.04), 0 8px 24px rgba(27, 36, 48, 0.06);
   }
 }
 
@@ -394,24 +382,29 @@ function onCommand(cmd: string) {
   flex: 1;
   display: flex;
   min-width: 0;
+  border-radius: 20px 0 0 0;
+  background: #ffffff;
+  overflow: hidden;
 }
 
 .area-e {
   width: var(--admin-e-width);
-  padding: 12px 8px;
-  border-right: 1px solid var(--admin-line);
+  padding: 8px 6px;
   background: rgba(255, 255, 255, 0.66);
 
   :deep(.el-menu) {
     border-right: none;
     background: transparent;
   }
-}
 
-.e-title {
-  font-size: 13px;
-  font-weight: 650;
-  margin: 4px 8px 10px;
+  :deep(.el-menu-item) {
+    height: 36px;
+    line-height: 36px;
+    font-size: 13px;
+    padding: 0 12px !important;
+    margin: 2px 0;
+    border-radius: 8px;
+  }
 }
 
 .area-f {

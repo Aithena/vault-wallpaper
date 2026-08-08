@@ -60,7 +60,6 @@
           <template #default="{ row }">{{ row.success ? '—' : row.error || '—' }}</template>
         </el-table-column>
       </el-table>
-      <p v-if="!loading && !rows.length" class="empty-hint">暂无下载记录</p>
 
       <el-pagination
         v-model:current-page="page"
@@ -169,11 +168,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.empty-hint {
-  margin-top: 12px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
 .table-pagination {
   margin-top: 16px;
   justify-content: flex-end;

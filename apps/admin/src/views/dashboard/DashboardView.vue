@@ -32,7 +32,7 @@
         <el-button @click="$router.push('/tools/audit')">操作日志</el-button>
       </el-space>
 
-      <h3 class="section-title">最近操作</h3>
+      <h3 class="section-title section-title--spaced">最近操作</h3>
       <el-table :data="recentAudits" stripe border size="small">
         <el-table-column label="时间" min-width="160">
           <template #default="{ row }">{{ formatTime(row.at) }}</template>
@@ -41,7 +41,9 @@
         <el-table-column label="动作" min-width="180">
           <template #default="{ row }">{{ formatAuditAction(row.action) }}</template>
         </el-table-column>
-        <el-table-column prop="target" label="对象" min-width="160" />
+        <el-table-column label="对象" min-width="160">
+          <template #default="{ row }">{{ formatAuditTarget(row.target) }}</template>
+        </el-table-column>
       </el-table>
       <p v-if="!loading && !recentAudits.length" class="empty-hint">暂无操作日志</p>
     </el-card>
@@ -52,7 +54,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { adminApi, ApiError } from '../../lib/api'
-import { formatAuditAction } from '../../lib/audit-labels'
+import { formatAuditAction, formatAuditTarget } from '../../lib/audit-labels'
 
 type Overview = {
   usersTotal: number
@@ -201,6 +203,9 @@ onMounted(load)
   margin: 8px 0 12px;
   font-size: 15px;
   font-weight: 600;
+}
+.section-title--spaced {
+  margin-top: 28px;
 }
 .empty-hint {
   margin-top: 10px;
