@@ -83,6 +83,16 @@ a {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+
+  /* Element Plus daterange 默认约 350px，强制收窄 */
+  .el-date-editor--daterange.el-input__wrapper,
+  .el-date-editor.el-date-editor--daterange,
+  .el-date-editor--daterange {
+    --el-date-editor-width: 248px;
+    --el-date-editor-daterange-width: 248px;
+    width: 248px !important;
+    max-width: 248px !important;
+  }
 }
 
 .thumb {

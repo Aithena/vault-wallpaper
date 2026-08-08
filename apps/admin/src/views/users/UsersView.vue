@@ -26,7 +26,10 @@
           start-placeholder="注册起"
           end-placeholder="注册止"
           value-format="YYYY-MM-DD"
-          @change="onFilterChange"
+          style="width: 248px"
+          :disabled-date="disabledDate"
+          @calendar-change="onCalendarChange"
+          @change="onDateRangeChange"
         />
         <el-select
           v-model="filters.blacklisted"
@@ -245,6 +248,11 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminApi, ApiError } from '../../lib/api'
+import {
+  defaultDateRange,
+  isDateRangeTooLong,
+  makeRangeDisabledDate,
+} from '../../lib/date-range'
 import { buildQuery } from '../../lib/query'
 import { usePermission } from '../../lib/permission'
 
@@ -305,7 +313,9 @@ const users = ref<UserRow[]>([])
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-const dateRange = ref<[string, string] | null>(null)
+const dateRange = ref<[string, string] | null>(defaultDateRange())
+const rangePickAnchor = ref<Date | null>(null)
+const disabledDate = makeRangeDisabledDate(() => rangePickAnchor.value)
 const filters = reactive({
   memberType: 'all',
   blacklisted: 'all',
@@ -348,6 +358,21 @@ function actorLabel(row: UserLogRow) {
   if (row.actorType === 'admin') return row.actorName || '管理员'
   if (row.actorType === 'user') return row.actorName || '用户本人'
   return '系统'
+}
+
+function onCalendarChange(val: [Date, Date | null] | null) {
+  rangePickAnchor.value = val?.[0] ?? null
+}
+
+function onDateRangeChange() {
+  rangePickAnchor.value = null
+  if (!dateRange.value) {
+    dateRange.value = defaultDateRange()
+  } else if (isDateRangeTooLong(dateRange.value)) {
+    ElMessage.warning('时间范围最长 365 天')
+    dateRange.value = defaultDateRange()
+  }
+  onFilterChange()
 }
 
 function onFilterChange() {

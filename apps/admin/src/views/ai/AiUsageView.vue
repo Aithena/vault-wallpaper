@@ -82,7 +82,10 @@
           start-placeholder="起"
           end-placeholder="止"
           value-format="YYYY-MM-DD"
-          @change="onFilterChange"
+          style="width: 248px"
+          :disabled-date="disabledDate"
+          @calendar-change="onCalendarChange"
+          @change="onDateRangeChange"
         />
         <el-input
           v-model="filters.q"
@@ -156,6 +159,11 @@ import type {
   LegendComponentOption,
 } from 'echarts/components'
 import { adminApi, ApiError } from '../../lib/api'
+import {
+  defaultDateRange,
+  isDateRangeTooLong,
+  makeRangeDisabledDate,
+} from '../../lib/date-range'
 import { buildQuery } from '../../lib/query'
 
 use([CanvasRenderer, BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent])
@@ -202,7 +210,9 @@ const pageSize = ref(20)
 const total = ref(0)
 const rows = ref<UsageRow[]>([])
 const trend = ref<TrendPoint[]>([])
-const dateRange = ref<[string, string] | null>(null)
+const dateRange = ref<[string, string] | null>(defaultDateRange())
+const rangePickAnchor = ref<Date | null>(null)
+const disabledDate = makeRangeDisabledDate(() => rangePickAnchor.value)
 const filters = reactive({ status: 'all', trigger: 'all', q: '' })
 const summary = ref<Summary>({
   total: 0,
@@ -272,6 +282,21 @@ function statusType(s: string): 'success' | 'danger' | 'info' {
 
 function imageSourceLabel(s: string) {
   return ({ preview: '预览', original: '原图', none: '无' } as const)[s as 'preview'] || s
+}
+
+function onCalendarChange(val: [Date, Date | null] | null) {
+  rangePickAnchor.value = val?.[0] ?? null
+}
+
+function onDateRangeChange() {
+  rangePickAnchor.value = null
+  if (!dateRange.value) {
+    dateRange.value = defaultDateRange()
+  } else if (isDateRangeTooLong(dateRange.value)) {
+    ElMessage.warning('时间范围最长 365 天')
+    dateRange.value = defaultDateRange()
+  }
+  onFilterChange()
 }
 
 function onFilterChange() {

@@ -5,7 +5,7 @@
         <div>
           <h1>全部订单</h1>
           <p class="sub">
-            含正式付费、0 元免费开通、后台手工开通；未选日期时默认近 30 天，最长 365 天。
+            含正式付费、0 元免费开通、后台手工开通；默认近 30 天，最长可选 365 天。
           </p>
         </div>
         <div class="actions">
@@ -22,16 +22,16 @@
       <div class="filter-row" style="margin-bottom: 14px">
         <el-select v-model="filters.status" style="width: 130px" @change="onFilterChange">
           <el-option label="全部状态" value="all" />
-          <el-option label="pending" value="pending" />
-          <el-option label="paid" value="paid" />
-          <el-option label="refunded" value="refunded" />
+          <el-option label="待支付" value="pending" />
+          <el-option label="已支付" value="paid" />
+          <el-option label="已退款" value="refunded" />
         </el-select>
         <el-select v-model="filters.type" style="width: 150px" @change="onFilterChange">
           <el-option label="全部类型" value="all" />
-          <el-option label="paid" value="paid" />
-          <el-option label="free" value="free" />
-          <el-option label="admin_grant" value="admin_grant" />
-          <el-option label="mock" value="mock" />
+          <el-option label="正式付费" value="paid" />
+          <el-option label="免费开通" value="free" />
+          <el-option label="后台开通" value="admin_grant" />
+          <el-option label="模拟支付" value="mock" />
         </el-select>
         <el-date-picker
           v-model="dateRange"
@@ -40,7 +40,10 @@
           start-placeholder="创建起"
           end-placeholder="创建止"
           value-format="YYYY-MM-DD"
-          @change="onFilterChange"
+          style="width: 248px"
+          :disabled-date="disabledDate"
+          @calendar-change="onCalendarChange"
+          @change="onDateRangeChange"
         />
         <el-input
           v-model="filters.q"
@@ -59,7 +62,7 @@
         </el-table-column>
         <el-table-column label="类型" width="120">
           <template #default="{ row }">
-            <el-tag size="small">{{ row.type }}</el-tag>
+            <el-tag size="small">{{ typeLabel(row.type) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="tier" label="档位" width="80" />
@@ -68,7 +71,7 @@
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
+            <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="创建时间" min-width="160">
@@ -124,9 +127,11 @@
         <el-descriptions v-if="detailOrder" :column="2" border>
           <el-descriptions-item label="订单号">{{ detailOrder.id }}</el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag :type="statusType(detailOrder.status)" size="small">{{ detailOrder.status }}</el-tag>
+            <el-tag :type="statusType(detailOrder.status)" size="small">
+              {{ statusLabel(detailOrder.status) }}
+            </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="类型">{{ detailOrder.type }}</el-descriptions-item>
+          <el-descriptions-item label="类型">{{ typeLabel(detailOrder.type) }}</el-descriptions-item>
           <el-descriptions-item label="档位">{{ detailOrder.tier }}</el-descriptions-item>
           <el-descriptions-item label="金额">¥{{ detailOrder.totalFee }}</el-descriptions-item>
           <el-descriptions-item label="用户邮箱">
@@ -196,6 +201,11 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminApi, adminDownload, ApiError } from '../../lib/api'
+import {
+  defaultDateRange,
+  isDateRangeTooLong,
+  makeRangeDisabledDate,
+} from '../../lib/date-range'
 import { buildQuery } from '../../lib/query'
 import { usePermission } from '../../lib/permission'
 
@@ -237,7 +247,9 @@ const rows = ref<OrderRow[]>([])
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-const dateRange = ref<[string, string] | null>(null)
+const dateRange = ref<[string, string] | null>(defaultDateRange())
+const rangePickAnchor = ref<Date | null>(null)
+const disabledDate = makeRangeDisabledDate(() => rangePickAnchor.value)
 const filters = reactive({ status: 'all', type: 'all', q: '' })
 
 const detailVisible = ref(false)
@@ -250,11 +262,45 @@ function formatTime(v: string | null | undefined) {
   return v.replace('T', ' ').slice(0, 19)
 }
 
+function statusLabel(s: string) {
+  return (
+    ({ pending: '待支付', paid: '已支付', refunded: '已退款' } as Record<string, string>)[s] ?? s
+  )
+}
+
+function typeLabel(s: string) {
+  return (
+    (
+      {
+        paid: '正式付费',
+        free: '免费开通',
+        admin_grant: '后台开通',
+        mock: '模拟支付',
+      } as Record<string, string>
+    )[s] ?? s
+  )
+}
+
 function statusType(s: string) {
   if (s === 'pending') return 'warning'
   if (s === 'paid') return 'success'
   if (s === 'refunded') return 'info'
   return 'info'
+}
+
+function onCalendarChange(val: [Date, Date | null] | null) {
+  rangePickAnchor.value = val?.[0] ?? null
+}
+
+function onDateRangeChange() {
+  rangePickAnchor.value = null
+  if (!dateRange.value) {
+    dateRange.value = defaultDateRange()
+  } else if (isDateRangeTooLong(dateRange.value)) {
+    ElMessage.warning('时间范围最长 365 天')
+    dateRange.value = defaultDateRange()
+  }
+  onFilterChange()
 }
 
 function onFilterChange() {
