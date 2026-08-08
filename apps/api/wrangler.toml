@@ -8,6 +8,13 @@ routes = [
   { pattern = "api.awall.cc", custom_domain = true }
 ]
 
+# Local default: `pnpm --filter @vault/api dev` uses `wrangler dev --local`
+# (Miniflare disk KV/R2 — does NOT count against Cloudflare free-tier caps).
+# Use `pnpm --filter @vault/api dev:remote` only when you intentionally need
+# cloud KV/R2/AI (same account daily limits as production).
+#
+# preview_id should be a SEPARATE namespace if you use --remote often;
+# reusing production id means local remote-dev writes burn prod quota.
 [[kv_namespaces]]
 binding = "KV"
 id = "3ff6aac757d44bd0baf041b1cba43d38"

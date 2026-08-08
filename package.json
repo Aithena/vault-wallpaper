@@ -6,6 +6,7 @@
     "dev:web": "pnpm --filter @vault/web dev",
     "dev:admin": "pnpm --filter @vault/admin dev",
     "dev:api": "pnpm --filter @vault/api dev",
+    "dev:api:remote": "pnpm --filter @vault/api dev:remote",
     "seed:r2": "bash scripts/seed-r2-local.sh",
     "seed:r2:prod": "bash scripts/seed-r2-prod.sh",
     "build:web": "pnpm --filter @vault/web build",

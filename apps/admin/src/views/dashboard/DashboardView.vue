@@ -38,7 +38,9 @@
           <template #default="{ row }">{{ formatTime(row.at) }}</template>
         </el-table-column>
         <el-table-column prop="adminUsername" label="管理员" width="120" />
-        <el-table-column prop="action" label="动作" min-width="180" />
+        <el-table-column label="动作" min-width="180">
+          <template #default="{ row }">{{ formatAuditAction(row.action) }}</template>
+        </el-table-column>
         <el-table-column prop="target" label="对象" min-width="160" />
       </el-table>
       <p v-if="!loading && !recentAudits.length" class="empty-hint">暂无操作日志</p>
@@ -50,6 +52,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { adminApi, ApiError } from '../../lib/api'
+import { formatAuditAction } from '../../lib/audit-labels'
 
 type Overview = {
   usersTotal: number

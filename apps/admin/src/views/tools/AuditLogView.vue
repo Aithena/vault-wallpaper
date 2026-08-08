@@ -15,8 +15,12 @@
           <template #default="{ row }">{{ row.at.replace('T', ' ').slice(0, 19) }}</template>
         </el-table-column>
         <el-table-column prop="adminUsername" label="管理员" width="120" />
-        <el-table-column prop="action" label="动作" min-width="200" />
-        <el-table-column prop="target" label="对象" min-width="180" />
+        <el-table-column label="动作" min-width="200">
+          <template #default="{ row }">{{ formatAuditAction(row.action) }}</template>
+        </el-table-column>
+        <el-table-column label="对象" min-width="180">
+          <template #default="{ row }">{{ formatAuditTarget(row.target) }}</template>
+        </el-table-column>
         <el-table-column label="详情" min-width="160">
           <template #default="{ row }">{{ row.detail || '—' }}</template>
         </el-table-column>
@@ -41,6 +45,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { adminApi, ApiError } from '../../lib/api'
 import { buildQuery } from '../../lib/query'
+import { formatAuditAction, formatAuditTarget } from '../../lib/audit-labels'
 
 type AuditRow = {
   id: string

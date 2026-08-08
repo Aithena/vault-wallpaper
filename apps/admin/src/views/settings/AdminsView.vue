@@ -27,10 +27,7 @@
           <template #default="{ row }">{{ row.email || '—' }}</template>
         </el-table-column>
         <el-table-column label="角色" width="140">
-          <template #default="{ row }">
-            {{ row.roleName }}
-            <span class="role-code">{{ row.roleCode }}</span>
-          </template>
+          <template #default="{ row }">{{ row.roleName }}</template>
         </el-table-column>
         <el-table-column label="数据权限" width="110">
           <template #default="{ row }">{{ dataScopeLabel(row.dataScope) }}</template>
@@ -433,11 +430,3 @@ onMounted(() => {
   void load()
 })
 </script>
-
-<style scoped>
-.role-code {
-  margin-left: 6px;
-  color: var(--admin-muted, #909399);
-  font-size: 12px;
-}
-</style>
