@@ -4,6 +4,7 @@
       <div class="a-left">
         <div class="brand">
           <img class="brand-logo" src="/logo.svg" alt="awall" width="32" height="32" />
+          <span class="brand-text">管理系统</span>
         </div>
       </div>
       <div class="a-right">
@@ -272,23 +273,6 @@ function onCommand(cmd: string) {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(to bottom right, #eee9fa, #ffffff);
-  background-attachment: fixed;
-
-  &::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    pointer-events: none;
-    background: linear-gradient(to bottom right, #e9ebfa, #ffffff);
-    animation: admin-bg-start-fade 16s ease-in-out infinite;
-  }
-
-  > * {
-    position: relative;
-    z-index: 1;
-  }
 }
 
 @keyframes admin-bg-start-fade {
@@ -309,11 +293,27 @@ function onCommand(cmd: string) {
   justify-content: space-between;
   gap: 16px;
   padding: 0 16px 0 0;
-  background: transparent;
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
   z-index: 20;
+  background: linear-gradient(to right, #eee9fa, #ffffff);
+  background-attachment: fixed;
+
+  &::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: linear-gradient(to right, #e9ebfa, #ffffff);
+    animation: admin-bg-start-fade 16s ease-in-out infinite;
+  }
+
+  > * {
+    position: relative;
+    z-index: 1;
+  }
 }
 
 .a-left,
@@ -377,6 +377,24 @@ function onCommand(cmd: string) {
   flex: 1;
   display: flex;
   align-items: flex-start;
+  
+  background: linear-gradient(to bottom, #eee9fa, #ffffff);
+  background-attachment: fixed;
+
+  &::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: linear-gradient(to bottom, #e9ebfa, #ffffff);
+    animation: admin-bg-start-fade 16s ease-in-out infinite;
+  }
+
+  > * {
+    position: relative;
+    z-index: 1;
+  }
 }
 
 .area-c {
@@ -457,7 +475,6 @@ function onCommand(cmd: string) {
   display: flex;
   min-width: 0;
   min-height: var(--admin-f-height);
-  border-radius: 10px 0 0 0;
   background: #ffffff;
 }
 
