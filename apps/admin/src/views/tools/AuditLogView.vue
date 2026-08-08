@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>全局操作日志</h1>
@@ -36,7 +36,7 @@
         @size-change="onPageSizeChange"
         @current-change="load"
       />
-    </el-card>
+    </div>
   </div>
 </template>
 

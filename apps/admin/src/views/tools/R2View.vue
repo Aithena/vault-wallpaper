@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never">
+    <div class="page-panel">
       <div class="page-toolbar">
         <div>
           <h1>存储 R2 <el-tag type="warning" size="small" effect="plain">占位</el-tag></h1>
@@ -8,7 +8,7 @@
         </div>
       </div>
       <EmptyPlaceholder title="R2 存储面板" description="预留桶用量、对象浏览与清理工具入口。" />
-    </el-card>
+    </div>
   </div>
 </template>
 

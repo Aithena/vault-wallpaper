@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>黑名单管理</h1>
@@ -42,8 +42,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <p v-if="!loading && !filtered.length" class="empty-hint">暂无黑名单</p>
-    </el-card>
+    </div>
 
     <el-dialog v-model="createVisible" title="新增拉黑" width="480px" destroy-on-close>
       <el-form label-width="80px">
@@ -151,11 +150,3 @@ async function remove(row: BlacklistRow) {
 
 onMounted(load)
 </script>
-
-<style scoped>
-.empty-hint {
-  margin-top: 12px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-</style>

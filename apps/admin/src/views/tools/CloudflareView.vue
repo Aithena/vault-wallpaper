@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never">
+    <div class="page-panel">
       <div class="page-toolbar">
         <div>
           <h1>Cloudflare <el-tag type="warning" size="small" effect="plain">占位</el-tag></h1>
@@ -11,7 +11,7 @@
         title="Cloudflare 运维面板"
         description="预留清理 CDN 缓存、域名与 Pages 状态查看等入口。"
       />
-    </el-card>
+    </div>
   </div>
 </template>
 

@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>分类管理</h1>
@@ -45,7 +45,7 @@
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+    </div>
 
     <el-dialog v-model="visible" :title="editingId ? '编辑分类' : '新增分类'" width="480px" destroy-on-close>
       <el-form label-width="80px">

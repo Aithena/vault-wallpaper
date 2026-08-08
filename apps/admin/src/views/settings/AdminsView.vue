@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>员工管理</h1>
@@ -83,7 +83,7 @@
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+    </div>
 
     <el-dialog v-model="createVisible" title="新增员工" width="520px" destroy-on-close>
       <el-form label-width="100px">

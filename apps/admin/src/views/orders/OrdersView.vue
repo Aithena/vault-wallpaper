@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>全部订单</h1>
@@ -115,7 +115,7 @@
         @size-change="onPageSizeChange"
         @current-change="load"
       />
-    </el-card>
+    </div>
 
     <el-dialog
       v-model="detailVisible"

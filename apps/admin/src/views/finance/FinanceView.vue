@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>财务统计</h1>
@@ -57,7 +57,7 @@
           <VChart class="chart" :option="tierPieOption" autoresize />
         </section>
       </div>
-    </el-card>
+    </div>
   </div>
 </template>
 

@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>在线用户</h1>
@@ -57,8 +57,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <p v-if="!loading && !rows.length" class="empty-hint">当前没有检测到在线用户</p>
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -134,11 +133,3 @@ onUnmounted(() => {
   if (timer) clearInterval(timer)
 })
 </script>
-
-<style scoped>
-.empty-hint {
-  margin-top: 12px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-</style>

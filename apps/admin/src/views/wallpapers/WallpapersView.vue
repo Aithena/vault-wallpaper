@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>壁纸列表</h1>
@@ -233,7 +233,7 @@
         @size-change="onPageSizeChange"
         @current-change="load"
       />
-    </el-card>
+    </div>
 
     <el-dialog v-model="reuploadVisible" title="补传原图" width="420px" destroy-on-close>
       <p style="margin-bottom: 12px">壁纸 ID：{{ reuploadId }}</p>

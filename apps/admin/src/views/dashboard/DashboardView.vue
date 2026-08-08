@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>数据总览</h1>
@@ -45,8 +45,7 @@
           <template #default="{ row }">{{ formatAuditTarget(row.target) }}</template>
         </el-table-column>
       </el-table>
-      <p v-if="!loading && !recentAudits.length" class="empty-hint">暂无操作日志</p>
-    </el-card>
+    </div>
   </div>
 </template>
 
@@ -206,10 +205,5 @@ onMounted(load)
 }
 .section-title--spaced {
   margin-top: 28px;
-}
-.empty-hint {
-  margin-top: 10px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
 }
 </style>

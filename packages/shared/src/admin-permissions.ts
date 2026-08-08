@@ -27,7 +27,7 @@ export type PermissionGroup = {
 export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   {
     key: 'dashboard',
-    label: '看板',
+    label: '首页看板',
     icon: 'home',
     menus: [
       {
@@ -41,7 +41,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   },
   {
     key: 'wallpapers',
-    label: '资源',
+    label: '壁纸资源',
     icon: 'image',
     menus: [
       {
@@ -90,7 +90,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   },
   {
     key: 'users',
-    label: '用户',
+    label: '用户会员',
     icon: 'users',
     menus: [
       {
@@ -126,7 +126,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   },
   {
     key: 'orders',
-    label: '订单',
+    label: '订单财务',
     icon: 'order',
     menus: [
       {
@@ -152,19 +152,19 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   },
   {
     key: 'settings',
-    label: '站点',
+    label: '站点配置',
     icon: 'settings',
     menus: [
       {
         key: 'settings.site',
-        label: '基础网站配置',
+        label: '基础配置',
         path: '/settings/site',
         dataScopeForcedAll: true,
         buttons: [{ key: 'settings.site.save', label: '保存' }],
       },
       {
         key: 'settings.tiers',
-        label: '会员档位与价目',
+        label: '会员套餐',
         path: '/settings/tiers',
         dataScopeForcedAll: true,
         buttons: [{ key: 'settings.tiers.save', label: '保存' }],
@@ -207,7 +207,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
   },
   {
     key: 'tools',
-    label: '工具',
+    label: '系统工具',
     icon: 'tools',
     menus: [
       {
@@ -219,21 +219,21 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
       },
       {
         key: 'tools.r2',
-        label: '存储 R2',
+        label: 'R2存储',
         path: '/tools/r2',
         dataScopeForcedAll: true,
         buttons: [],
       },
       {
         key: 'tools.resend',
-        label: 'Resend 邮件',
+        label: 'Resend邮件',
         path: '/tools/resend',
         dataScopeForcedAll: true,
         buttons: [],
       },
       {
         key: 'tools.pay',
-        label: '虎皮椒支付',
+        label: '支付配置',
         path: '/tools/pay',
         dataScopeForcedAll: true,
         buttons: [
@@ -243,20 +243,20 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
       },
       {
         key: 'tools.audit',
-        label: '全局操作日志',
+        label: '操作日志',
         path: '/tools/audit',
         buttons: [],
       },
       {
         key: 'tools.integration_logs',
-        label: '第三方接口日志',
+        label: '接口日志',
         path: '/tools/integration-logs',
         dataScopeForcedAll: true,
         buttons: [],
       },
       {
         key: 'tools.ai_usage',
-        label: 'AI 使用统计',
+        label: 'AI使用统计',
         path: '/tools/ai-usage',
         dataScopeForcedAll: true,
         buttons: [],
@@ -270,7 +270,7 @@ export const ADMIN_PERMISSION_TREE: PermissionGroup[] = [
       },
       {
         key: 'tools.jobs',
-        label: '定时任务监控',
+        label: '任务监控',
         path: '/tools/jobs',
         dataScopeForcedAll: true,
         buttons: [],

@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>{{ isNew ? '上传壁纸' : `编辑壁纸 · ${form.id}` }}</h1>
@@ -185,7 +185,7 @@
           </div>
         </el-col>
       </el-row>
-    </el-card>
+    </div>
   </div>
 </template>
 

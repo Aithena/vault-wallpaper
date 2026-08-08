@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>基础网站配置</h1>
@@ -34,7 +34,7 @@
           <el-switch v-model="form.purchaseEnabled" />
         </el-form-item>
       </el-form>
-    </el-card>
+    </div>
   </div>
 </template>
 

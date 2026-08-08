@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never">
+    <div class="page-panel">
       <div class="page-toolbar">
         <div>
           <h1>Resend 邮件 <el-tag type="warning" size="small" effect="plain">占位</el-tag></h1>
@@ -11,7 +11,7 @@
         title="邮件配置预留"
         description="预留 Resend API Key、发件域名与测试发送能力。"
       />
-    </el-card>
+    </div>
   </div>
 </template>
 

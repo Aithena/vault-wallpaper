@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loadingTax">
+    <div class="page-panel" v-loading="loadingTax">
       <div class="page-toolbar">
         <div>
           <h1>批量上传壁纸</h1>
@@ -117,7 +117,7 @@
         </div>
       </div>
       <el-empty v-else description="尚未选择图片" :image-size="80" />
-    </el-card>
+    </div>
   </div>
 </template>
 

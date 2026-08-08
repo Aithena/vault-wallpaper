@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>用户列表</h1>
@@ -130,7 +130,7 @@
         @size-change="onPageSizeChange"
         @current-change="load"
       />
-    </el-card>
+    </div>
 
     <el-dialog
       v-model="detailVisible"
@@ -168,7 +168,6 @@
             <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
           </el-table-column>
         </el-table>
-        <p v-if="!detailOrders.length" class="empty-hint">暂无订单</p>
 
         <h3 class="section-title">浏览路径（登录会话）</h3>
         <el-collapse v-if="browseSessions.length" v-model="browseActive">
@@ -225,7 +224,6 @@
           <template #default="{ row }">{{ row.detail || '—' }}</template>
         </el-table-column>
       </el-table>
-      <p v-if="!logsLoading && !logs.length" class="empty-hint">暂无日志</p>
       <el-pagination
         v-model:current-page="logsPage"
         v-model:page-size="logsPageSize"

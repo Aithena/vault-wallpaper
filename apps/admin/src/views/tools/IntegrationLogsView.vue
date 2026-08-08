@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>第三方接口日志</h1>
@@ -99,7 +99,7 @@
         @current-change="load"
         @size-change="onSizeChange"
       />
-    </el-card>
+    </div>
 
     <el-drawer v-model="detailOpen" title="接口日志详情" size="560px" destroy-on-close>
       <div v-loading="detailLoading" class="detail">

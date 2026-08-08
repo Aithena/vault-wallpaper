@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never" v-loading="loading">
+    <div class="page-panel" v-loading="loading">
       <div class="page-toolbar">
         <div>
           <h1>标签管理</h1>
@@ -44,7 +44,7 @@
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+    </div>
 
     <el-dialog v-model="visible" :title="editingId ? '编辑标签' : '新增标签'" width="480px" destroy-on-close>
       <el-form label-width="80px">

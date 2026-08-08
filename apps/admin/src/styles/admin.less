@@ -7,15 +7,39 @@
   --admin-line: rgba(27, 36, 48, 0.08);
   --admin-accent: #2563eb;
   --admin-accent-soft: rgba(37, 99, 235, 0.12);
-  --admin-c-width: 110px;
-  --admin-e-width: 160px;
+  --admin-c-width: 140px;
+  --admin-e-width: 0;
   --admin-a-height: 56px;
+  --admin-f-height: calc(100vh - var(--admin-a-height));
   --admin-font: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --el-color-primary: #2563eb;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(27, 36, 48, 0.28) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 2px;
+  height: 2px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(27, 36, 48, 0.28);
+  border-radius: 2px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(27, 36, 48, 0.45);
 }
 
 html,
@@ -46,6 +70,11 @@ a {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.page-panel {
+  position: relative;
+  min-width: 0;
 }
 
 .page-toolbar {

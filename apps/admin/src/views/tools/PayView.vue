@@ -1,6 +1,6 @@
 <template>
   <div class="page-stack">
-    <el-card shadow="never">
+    <div class="page-panel">
       <div class="page-toolbar">
         <div>
           <h1>虎皮椒支付</h1>
@@ -39,7 +39,7 @@
         </el-table-column>
         <el-table-column prop="summary" label="摘要" min-width="200" />
       </el-table>
-    </el-card>
+    </div>
   </div>
 </template>
 

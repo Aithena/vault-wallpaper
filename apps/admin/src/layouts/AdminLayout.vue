@@ -67,32 +67,36 @@
     </header>
 
     <div class="area-b">
-      <nav class="area-c" aria-label="一级菜单">
-        <button
-          v-for="group in visibleMenu"
-          :key="group.id"
-          type="button"
-          class="c-item"
-          :class="{ active: activeGroup?.id === group.id }"
-          @click="onPrimary(group)"
-        >
-          <el-icon :size="18"><component :is="iconMap[group.icon]" /></el-icon>
-          <span style="margin-left: 4px;">{{ group.label }}</span>
-        </button>
+      <nav class="area-c" aria-label="侧边菜单">
+        <div v-for="group in visibleMenu" :key="group.id" class="c-group">
+          <button
+            type="button"
+            class="c-item"
+            :class="{ active: activeGroup?.id === group.id }"
+            @click="onPrimary(group)"
+          >
+            <el-icon :size="18"><component :is="iconMap[group.icon]" /></el-icon>
+            <span>{{ group.label }}</span>
+          </button>
+          <div
+            v-if="activeGroup?.id === group.id && group.children.length > 1"
+            class="c-children"
+          >
+            <RouterLink
+              v-for="child in group.children"
+              :key="child.id"
+              :to="child.path"
+              class="c-child"
+              :class="{ active: activeChildPath === child.path }"
+            >
+              {{ child.label }}
+            </RouterLink>
+          </div>
+        </div>
       </nav>
 
       <div class="area-d">
-        <aside class="area-e" aria-label="二级菜单">
-          <el-menu :default-active="activeChildPath" router>
-            <el-menu-item
-              v-for="child in activeGroup?.children ?? []"
-              :key="child.id"
-              :index="child.path"
-            >
-              {{ child.label }}
-            </el-menu-item>
-          </el-menu>
-        </aside>
+        <aside class="area-e" aria-hidden="true" />
         <main class="area-f">
           <RouterView />
         </main>
@@ -110,7 +114,6 @@ import {
   HomeFilled,
   List,
   Picture,
-  Search,
   Setting,
   Tools,
   User,
@@ -265,13 +268,42 @@ function onCommand(cmd: string) {
 
 <style scoped lang="less">
 .admin-layout {
+  position: relative;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background: linear-gradient(to bottom right, #eee9fa, #ffffff);
+  background-attachment: fixed;
+
+  &::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: linear-gradient(to bottom right, #e9ebfa, #ffffff);
+    animation: admin-bg-start-fade 16s ease-in-out infinite;
+  }
+
+  > * {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+@keyframes admin-bg-start-fade {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .area-a {
   height: var(--admin-a-height);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -344,37 +376,79 @@ function onCommand(cmd: string) {
 .area-b {
   flex: 1;
   display: flex;
-  min-height: 0;
+  align-items: flex-start;
 }
 
 .area-c {
   width: var(--admin-c-width);
-  padding: 12px 8px;
+  flex-shrink: 0;
+  padding: 8px 6px 16px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   background: transparent;
+  position: sticky;
+  top: var(--admin-a-height);
+  max-height: calc(100vh - var(--admin-a-height));
+  overflow-y: auto;
+  align-self: flex-start;
+}
+
+.c-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .c-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 10px 4px;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   color: var(--admin-muted);
   font-size: 14px;
-  line-height: 1.2;
+  line-height: 1.5;
   cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    color: var(--admin-text);
+    background: rgba(255, 255, 255, 0.55);
+  }
+
+  &.active {
+    color: var(--admin-accent);
+    font-weight: 600;
+  }
+}
+
+.c-children {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 0 4px 8px;
+}
+
+.c-child {
+  display: block;
+  padding: 6px 10px 6px 28px;
+  border-radius: 6px;
+  color: var(--admin-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-decoration: none;
+
   &:hover {
     color: var(--admin-text);
   }
 
   &.active {
     color: var(--admin-accent);
+    font-weight: 600;
   }
 }
 
@@ -382,36 +456,25 @@ function onCommand(cmd: string) {
   flex: 1;
   display: flex;
   min-width: 0;
-  border-radius: 20px 0 0 0;
+  min-height: var(--admin-f-height);
+  border-radius: 10px 0 0 0;
   background: #ffffff;
-  overflow: hidden;
 }
 
 .area-e {
-  width: var(--admin-e-width);
-  padding: 8px 6px;
-  background: rgba(255, 255, 255, 0.66);
-
-  :deep(.el-menu) {
-    border-right: none;
-    background: transparent;
-  }
-
-  :deep(.el-menu-item) {
-    height: 36px;
-    line-height: 36px;
-    font-size: 13px;
-    padding: 0 12px !important;
-    margin: 2px 0;
-    border-radius: 8px;
-  }
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  border: none;
+  flex-shrink: 0;
 }
 
 .area-f {
   flex: 1;
   min-width: 0;
   padding: 18px 20px 28px;
-  overflow: auto;
 }
 
 .notif-panel {
