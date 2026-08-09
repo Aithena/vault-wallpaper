@@ -16,8 +16,10 @@ export type VisitorPageview = {
   email?: string | null
 }
 
-const INDEX_KEY = 'visitors:pageviews:index'
-const MAX_INDEX = 5000
+/** Single-key ring buffer — list is 1 KV read, not N+1. */
+const RECENT_KEY = 'visitors:pageviews:recent_v1'
+const MAX_RECENT = 500
+const LEGACY_INDEX_KEY = 'visitors:pageviews:index'
 const DAY_STATS_PREFIX = 'visitors:day:'
 
 function pvKey(id: string) {
@@ -26,17 +28,6 @@ function pvKey(id: string) {
 
 function dayKey(iso: string) {
   return iso.slice(0, 10)
-}
-
-async function readIndex(kv: KVNamespace): Promise<string[]> {
-  const raw = await kv.get(INDEX_KEY)
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw) as string[]
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
 }
 
 export function parseUserAgent(ua: string): {
@@ -102,11 +93,46 @@ function detailThrottleKey(visitorId: string) {
   return `visitors:detail_throttle:${visitorId}`
 }
 
+async function readRecent(kv: KVNamespace): Promise<VisitorPageview[] | null> {
+  const raw = await kv.get(RECENT_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as VisitorPageview[]
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/** One-time migrate from legacy id-index + per-row keys. */
+async function migrateFromLegacy(kv: KVNamespace): Promise<VisitorPageview[]> {
+  const raw = await kv.get(LEGACY_INDEX_KEY)
+  if (!raw) return []
+  let ids: string[] = []
+  try {
+    ids = JSON.parse(raw) as string[]
+    if (!Array.isArray(ids)) ids = []
+  } catch {
+    return []
+  }
+  const rows = (
+    await Promise.all(
+      ids.slice(0, MAX_RECENT).map(async (id) => {
+        const r = await kv.get(pvKey(id))
+        return r ? (JSON.parse(r) as VisitorPageview) : null
+      }),
+    )
+  ).filter((r): r is VisitorPageview => Boolean(r))
+  if (rows.length) {
+    await kv.put(RECENT_KEY, JSON.stringify(rows.slice(0, MAX_RECENT)))
+  }
+  return rows
+}
+
 async function bumpDayStats(kv: KVNamespace, at: string, visitorId: string) {
   const date = dayKey(at)
   const throttleKey = dayBumpThrottleKey(date, visitorId)
   const throttled = await kv.get(throttleKey)
-  // Same visitor within the window: skip day-bucket rewrite (PV slightly under-counted).
   if (throttled) return
 
   const key = `${DAY_STATS_PREFIX}${date}`
@@ -127,8 +153,8 @@ async function bumpDayStats(kv: KVNamespace, at: string, visitorId: string) {
 }
 
 /**
- * Day UV/PV always attempted (throttled per visitor).
- * Detail list rows are throttled so guests still appear, without 1:1 writes per SPA hop.
+ * Day UV/PV throttled per visitor.
+ * Detail list uses a single-key ring buffer (throttled) — no N+1 on admin list.
  */
 export async function writeVisitorPageview(
   kv: KVNamespace,
@@ -149,7 +175,7 @@ export async function writeVisitorPageview(
     device: input.device,
     os: input.os,
     browser: input.browser,
-    userAgent: input.userAgent?.slice(0, 300),
+    // Omit bulky UA from ring buffer to keep the single key small.
     userId: input.userId ?? null,
     email: input.email ?? null,
   }
@@ -160,10 +186,10 @@ export async function writeVisitorPageview(
   const dKey = detailThrottleKey(record.visitorId)
   const detailThrottled = await kv.get(dKey)
   if (!detailThrottled) {
-    await kv.put(pvKey(id), JSON.stringify(record))
-    const ids = await readIndex(kv)
-    ids.unshift(id)
-    await kv.put(INDEX_KEY, JSON.stringify(ids.slice(0, MAX_INDEX)))
+    let items = await readRecent(kv)
+    if (!items) items = await migrateFromLegacy(kv)
+    items.unshift(record)
+    await kv.put(RECENT_KEY, JSON.stringify(items.slice(0, MAX_RECENT)))
     await kv.put(dKey, '1', {
       expirationTtl: loggedIn
         ? DETAIL_THROTTLE_USER_SECONDS
@@ -178,13 +204,9 @@ export async function listVisitorPageviews(
   kv: KVNamespace,
   limit = 500,
 ): Promise<VisitorPageview[]> {
-  const ids = (await readIndex(kv)).slice(0, limit)
-  const rows: VisitorPageview[] = []
-  for (const id of ids) {
-    const raw = await kv.get(pvKey(id))
-    if (raw) rows.push(JSON.parse(raw) as VisitorPageview)
-  }
-  return rows
+  let items = await readRecent(kv)
+  if (!items) items = await migrateFromLegacy(kv)
+  return items.slice(0, Math.min(limit, MAX_RECENT))
 }
 
 export async function getVisitorDayStats(
@@ -208,9 +230,18 @@ export async function getVisitorDayStatsRange(
   const end = Date.parse(`${to}T00:00:00.000Z`)
   if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return out
 
+  const dates: string[] = []
   for (let t = start; t <= end; t += 86400000) {
-    const date = new Date(t).toISOString().slice(0, 10)
-    const raw = await kv.get(`${DAY_STATS_PREFIX}${date}`)
+    dates.push(new Date(t).toISOString().slice(0, 10))
+  }
+
+  // Parallel get — still N reads, but much faster; prefer short ranges in admin UI.
+  const raws = await Promise.all(
+    dates.map((date) => kv.get(`${DAY_STATS_PREFIX}${date}`)),
+  )
+  for (let i = 0; i < dates.length; i++) {
+    const date = dates[i]
+    const raw = raws[i]
     if (!raw) {
       out.push({ date, pv: 0, uv: 0 })
       continue

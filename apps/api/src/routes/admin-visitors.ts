@@ -28,7 +28,7 @@ adminVisitorsRoutes.get('/stats', async (c) => {
   const device = c.req.query('device')?.trim()
   const loggedIn = c.req.query('loggedIn')?.trim()
 
-  const all = (await listVisitorPageviews(c.env.KV, 2000)).filter((r) =>
+  const all = (await listVisitorPageviews(c.env.KV, 500)).filter((r) =>
     inDateRange(r.at, range.from, range.to),
   )
   const trend = await getVisitorDayStatsRange(c.env.KV, range.from, range.to)

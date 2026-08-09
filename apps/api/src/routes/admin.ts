@@ -14,6 +14,7 @@ import { adminDashboardRoutes } from './admin-dashboard'
 import { adminAiRoutes } from './admin-ai'
 import { adminVisitorsRoutes } from './admin-visitors'
 import { adminIntegrationLogsRoutes } from './admin-integration-logs'
+import { adminCloudflareRoutes } from './admin-cloudflare'
 
 export const adminRoutes = new Hono<AppEnv>()
 
@@ -31,3 +32,4 @@ adminRoutes.route('/dashboard', adminDashboardRoutes)
 adminRoutes.route('/ai', adminAiRoutes)
 adminRoutes.route('/visitors', adminVisitorsRoutes)
 adminRoutes.route('/integration-logs', adminIntegrationLogsRoutes)
+adminRoutes.route('/cloudflare', adminCloudflareRoutes)

@@ -28,10 +28,15 @@ preview_bucket_name = "vault-wallpaper-preview"
 [vars]
 APP_NAME = "awall"
 PUBLIC_ORIGIN = "https://awall.cc"
+CF_ACCOUNT_ID = "be468fd8562e32b870221a6b8a458629"
+CF_KV_NAMESPACE_ID = "3ff6aac757d44bd0baf041b1cba43d38"
+CF_WORKER_SCRIPT_NAME = "vault-wallpaper-api"
+CF_R2_BUCKET_NAME = "awall-wallpaper"
 
 [ai]
 binding = "AI"
 
 # Secrets via `wrangler secret put` or .dev.vars:
 # JWT_SECRET, RESEND_API_KEY, EMAIL_FROM,
-# XUNHUPAY_APPID, XUNHUPAY_APPSECRET, XUNHUPAY_GATEWAY
+# XUNHUPAY_APPID, XUNHUPAY_APPSECRET, XUNHUPAY_GATEWAY,
+# CF_API_TOKEN  (Account Analytics Read — for admin KV usage charts)
