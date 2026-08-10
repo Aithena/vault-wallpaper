@@ -36,6 +36,9 @@ CF_R2_BUCKET_NAME = "awall-wallpaper"
 [ai]
 binding = "AI"
 
+[images]
+binding = "IMAGES"
+
 # Secrets via `wrangler secret put` or .dev.vars:
 # JWT_SECRET, RESEND_API_KEY, EMAIL_FROM,
 # XUNHUPAY_APPID, XUNHUPAY_APPSECRET, XUNHUPAY_GATEWAY,

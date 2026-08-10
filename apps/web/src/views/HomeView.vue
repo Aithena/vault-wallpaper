@@ -11,7 +11,11 @@
 
   <div v-else class="grid">
     <article v-for="item in items" :key="item.id" class="card">
-      <img :src="item.previewUrl" :alt="item.title" loading="lazy" />
+      <img
+        :src="apiUrl(item.mediumUrl || item.thumbUrl || item.previewUrl)"
+        :alt="item.title"
+        loading="lazy"
+      />
       <div class="card-body">
         <h3>{{ item.title }}</h3>
         <div class="meta">

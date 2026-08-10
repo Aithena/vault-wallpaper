@@ -32,7 +32,7 @@ import {
   headOriginal,
   previewApiPath,
   putOriginal,
-  putPreview,
+  putPreviewWithVariants,
   deleteWallpaperObjects,
 } from '../lib/r2-wallpaper'
 import { assertOwned, filterOwned, getActorScope } from '../lib/admin-scope'
@@ -501,7 +501,13 @@ adminWallpapersRoutes.post('/:id/preview', async (c) => {
   const file = asUploadFile(form.file)
   if (!file) return c.json({ error: 'file_required' }, 400)
 
-  await putPreview(c.env.R2, id, await file.arrayBuffer(), file.type || 'image/jpeg')
+  await putPreviewWithVariants(
+    c.env.R2,
+    c.env.IMAGES,
+    id,
+    await file.arrayBuffer(),
+    file.type || 'image/jpeg',
+  )
   const previewUrl = previewApiPath(id)
   const wp = await updateWallpaper(c.env.KV, id, { previewUrl })
   await writeAudit(c.env.KV, {

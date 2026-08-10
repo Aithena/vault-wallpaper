@@ -5,7 +5,8 @@ import {
   type WallpaperRecord,
 } from './wallpaper-catalog'
 import { isNanoidWallpaperId, newWallpaperId } from './wallpaper-id'
-import { originalKey, previewApiPath, previewKey } from './r2-wallpaper'
+import { originalKey, previewApiPath, previewKey, previewSizeKey } from './r2-wallpaper'
+import { PREVIEW_SIZES } from './image-resize'
 import { listDownloads } from './downloads'
 import { listAiUsage } from './ai-usage'
 
@@ -86,6 +87,9 @@ async function migrateOne(
   if (r2) {
     await moveR2Object(r2, originalKey(wp.id), originalKey(newId))
     await moveR2Object(r2, previewKey(wp.id), previewKey(newId))
+    for (const size of PREVIEW_SIZES) {
+      await moveR2Object(r2, previewSizeKey(wp.id, size), previewSizeKey(newId, size))
+    }
   }
 
   const next: WallpaperRecord = {

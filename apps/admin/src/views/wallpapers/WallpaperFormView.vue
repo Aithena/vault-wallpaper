@@ -181,7 +181,7 @@
           </div>
 
           <div v-if="form.previewUrl" class="preview-box">
-            <img :src="form.previewUrl" alt="preview" />
+            <img :src="apiUrl(form.previewUrl)" alt="preview" />
           </div>
         </el-col>
       </el-row>
@@ -195,7 +195,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import type { UploadFile } from 'element-plus'
-import { adminApi, adminUpload, ApiError } from '../../lib/api'
+import { adminApi, adminUpload, apiUrl, ApiError } from '../../lib/api'
 import { usePermission } from '../../lib/permission'
 
 type TaxItem = { id: string; name: string }
@@ -350,7 +350,7 @@ function applyWallpaper(w: WallpaperDetail) {
   form.aiAnalyzedAt = w.aiAnalyzedAt || ''
   if (!previewFile.value && w.previewUrl) {
     if (previewLocalUrl.value) revokeUrl(previewLocalUrl.value)
-    previewLocalUrl.value = w.previewUrl
+    previewLocalUrl.value = apiUrl(w.previewUrl)
   }
 }
 

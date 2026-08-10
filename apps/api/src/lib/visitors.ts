@@ -107,25 +107,40 @@ async function readRecent(kv: KVNamespace): Promise<VisitorPageview[] | null> {
 /** One-time migrate from legacy id-index + per-row keys. */
 async function migrateFromLegacy(kv: KVNamespace): Promise<VisitorPageview[]> {
   const raw = await kv.get(LEGACY_INDEX_KEY)
-  if (!raw) return []
+  if (!raw) {
+    await kv.put(RECENT_KEY, '[]')
+    return []
+  }
   let ids: string[] = []
   try {
     ids = JSON.parse(raw) as string[]
     if (!Array.isArray(ids)) ids = []
   } catch {
+    await kv.put(RECENT_KEY, '[]')
     return []
   }
-  const rows = (
-    await Promise.all(
-      ids.slice(0, MAX_RECENT).map(async (id) => {
-        const r = await kv.get(pvKey(id))
-        return r ? (JSON.parse(r) as VisitorPageview) : null
+  const rows: VisitorPageview[] = []
+  // Cap parallelism to avoid Worker subrequest / CPU spikes.
+  const slice = ids.slice(0, MAX_RECENT)
+  const chunkSize = 25
+  for (let i = 0; i < slice.length; i += chunkSize) {
+    const chunk = slice.slice(i, i + chunkSize)
+    const part = await Promise.all(
+      chunk.map(async (id) => {
+        try {
+          const r = await kv.get(pvKey(id))
+          if (!r) return null
+          return JSON.parse(r) as VisitorPageview
+        } catch {
+          return null
+        }
       }),
     )
-  ).filter((r): r is VisitorPageview => Boolean(r))
-  if (rows.length) {
-    await kv.put(RECENT_KEY, JSON.stringify(rows.slice(0, MAX_RECENT)))
+    for (const row of part) {
+      if (row) rows.push(row)
+    }
   }
+  await kv.put(RECENT_KEY, JSON.stringify(rows.slice(0, MAX_RECENT)))
   return rows
 }
 
@@ -137,9 +152,17 @@ async function bumpDayStats(kv: KVNamespace, at: string, visitorId: string) {
 
   const key = `${DAY_STATS_PREFIX}${date}`
   const raw = await kv.get(key)
-  let bucket: DayBucket = raw
-    ? (JSON.parse(raw) as DayBucket)
-    : { date, pv: 0, visitors: [] }
+  let bucket: DayBucket = { date, pv: 0, visitors: [] }
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as DayBucket
+      if (parsed && typeof parsed.pv === 'number' && Array.isArray(parsed.visitors)) {
+        bucket = parsed
+      }
+    } catch {
+      /* reset corrupt bucket */
+    }
+  }
 
   bucket.pv += 1
   if (!bucket.visitors.includes(visitorId)) {
@@ -180,21 +203,29 @@ export async function writeVisitorPageview(
     email: input.email ?? null,
   }
 
-  await bumpDayStats(kv, at, record.visitorId)
+  try {
+    await bumpDayStats(kv, at, record.visitorId)
+  } catch {
+    /* day stats are best-effort */
+  }
 
   const loggedIn = Boolean(record.userId)
   const dKey = detailThrottleKey(record.visitorId)
-  const detailThrottled = await kv.get(dKey)
-  if (!detailThrottled) {
-    let items = await readRecent(kv)
-    if (!items) items = await migrateFromLegacy(kv)
-    items.unshift(record)
-    await kv.put(RECENT_KEY, JSON.stringify(items.slice(0, MAX_RECENT)))
-    await kv.put(dKey, '1', {
-      expirationTtl: loggedIn
-        ? DETAIL_THROTTLE_USER_SECONDS
-        : DETAIL_THROTTLE_GUEST_SECONDS,
-    })
+  try {
+    const detailThrottled = await kv.get(dKey)
+    if (!detailThrottled) {
+      let items = await readRecent(kv)
+      if (!items) items = await migrateFromLegacy(kv)
+      items.unshift(record)
+      await kv.put(RECENT_KEY, JSON.stringify(items.slice(0, MAX_RECENT)))
+      await kv.put(dKey, '1', {
+        expirationTtl: loggedIn
+          ? DETAIL_THROTTLE_USER_SECONDS
+          : DETAIL_THROTTLE_GUEST_SECONDS,
+      })
+    }
+  } catch {
+    /* detail ring buffer is best-effort */
   }
 
   return record

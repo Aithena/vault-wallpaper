@@ -110,7 +110,12 @@
         <el-table-column type="selection" width="48" />
         <el-table-column label="预览" width="80">
           <template #default="{ row }">
-            <img v-if="row.previewUrl" class="thumb" :src="row.previewUrl" :alt="row.title" />
+            <img
+              v-if="row.thumbUrl || row.previewUrl"
+              class="thumb"
+              :src="apiUrl(row.thumbUrl || row.previewUrl)"
+              :alt="row.title"
+            />
           </template>
         </el-table-column>
         <el-table-column prop="title" label="标题" min-width="120" />
@@ -262,7 +267,7 @@
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { adminApi, adminUpload, ApiError } from '../../lib/api'
+import { adminApi, adminUpload, apiUrl, ApiError } from '../../lib/api'
 import { buildQuery } from '../../lib/query'
 import { usePermission } from '../../lib/permission'
 
@@ -270,6 +275,8 @@ type WallpaperRow = {
   id: string
   title: string
   previewUrl: string
+  thumbUrl?: string
+  mediumUrl?: string
   status: string
   tierRequired: string
   category: string | null

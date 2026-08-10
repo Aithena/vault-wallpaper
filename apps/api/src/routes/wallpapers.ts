@@ -7,7 +7,8 @@ import {
   getPublicCatalogSnapshot,
 } from '../lib/wallpaper-catalog'
 import { migrateWallpaperIdsIfNeeded } from '../lib/migrate-wallpaper-ids'
-import { getPreviewObject, originalKey } from '../lib/r2-wallpaper'
+import { originalKey, resolvePreviewObject } from '../lib/r2-wallpaper'
+import { parsePreviewSize } from '../lib/image-resize'
 import { writeDownload } from '../lib/downloads'
 import { readBearer, verifySession } from '../lib/session'
 import { getUser, isUserMembershipActive } from '../lib/users'
@@ -29,13 +30,20 @@ wallpaperRoutes.get('/', async (c) => {
 
 wallpaperRoutes.get('/:id/preview', async (c) => {
   const id = c.req.param('id')
-  const object = await getPreviewObject(c.env.R2, id)
+  const size = parsePreviewSize(c.req.query('size'))
+  const object = await resolvePreviewObject(c.env.R2, c.env.IMAGES, id, size, {
+    cacheMissing: size !== 'full',
+  })
   if (!object) return c.json({ error: 'not_found' }, 404)
 
   const headers = new Headers()
   object.writeHttpMetadata(headers)
   headers.set('etag', object.httpEtag)
   headers.set('Cache-Control', 'public, max-age=86400')
+  // Allow cross-origin <img> from admin.awall.cc / awall.cc
+  headers.set('Cross-Origin-Resource-Policy', 'cross-origin')
+  // Vary by size so CDNs don't mix variants
+  headers.set('Vary', 'Accept')
   return new Response(object.body, { headers })
 })
 

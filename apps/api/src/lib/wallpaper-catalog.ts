@@ -1,4 +1,5 @@
 import type { MembershipTierId } from '@vault/shared'
+import { wallpaperImageUrls } from './r2-wallpaper'
 import { newWallpaperId } from './wallpaper-id'
 
 export type WallpaperStatus =
@@ -198,78 +199,40 @@ export async function getPublicCatalogSnapshot(
 }
 
 export async function ensureSeedCatalog(kv: KVNamespace): Promise<void> {
-  const existing = await readIndex(kv, WP_INDEX)
-  if (existing.length > 0) return
-
   const now = new Date().toISOString()
-  const cats: CategoryRecord[] = [
-    { id: 'cat_nature', name: '自然', slug: 'nature', sort: 1, createdAt: now, updatedAt: now },
-    { id: 'cat_city', name: '城市', slug: 'city', sort: 2, createdAt: now, updatedAt: now },
-  ]
-  for (const c of cats) {
-    await kv.put(catKey(c.id), JSON.stringify(c))
-  }
-  await writeIndex(kv, CAT_INDEX, cats.map((c) => c.id))
 
-  const tags: TagRecord[] = [
-    { id: 'tag_aurora', name: '极光', slug: 'aurora', createdAt: now, updatedAt: now },
-    { id: 'tag_harbor', name: '海港', slug: 'harbor', createdAt: now, updatedAt: now },
-    { id: 'tag_night', name: '夜景', slug: 'night', createdAt: now, updatedAt: now },
-  ]
-  for (const t of tags) {
-    await kv.put(tagKey(t.id), JSON.stringify(t))
+  // Categories / tags only when empty — never seed fake picsum wallpapers.
+  const catIds = await readIndex(kv, CAT_INDEX)
+  if (catIds.length === 0) {
+    const cats: CategoryRecord[] = [
+      { id: 'cat_nature', name: '自然', slug: 'nature', sort: 1, createdAt: now, updatedAt: now },
+      { id: 'cat_city', name: '城市', slug: 'city', sort: 2, createdAt: now, updatedAt: now },
+    ]
+    for (const c of cats) {
+      await kv.put(catKey(c.id), JSON.stringify(c))
+    }
+    await writeIndex(kv, CAT_INDEX, cats.map((c) => c.id))
   }
-  await writeIndex(kv, TAG_INDEX, tags.map((t) => t.id))
 
-  const seeds: WallpaperRecord[] = [
-    {
-      id: newWallpaperId(),
-      title: '极光山脊',
-      previewUrl: 'https://picsum.photos/seed/vault-aurora/640/360',
-      width: 3840,
-      height: 2160,
-      tierRequired: 'free',
-      status: 'published',
-      categoryId: 'cat_nature',
-      tagIds: ['tag_aurora'],
-      hasOriginal: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: newWallpaperId(),
-      title: '雾港清晨',
-      previewUrl: 'https://picsum.photos/seed/vault-harbor/640/360',
-      width: 3840,
-      height: 2160,
-      tierRequired: 'pro',
-      status: 'published',
-      categoryId: 'cat_city',
-      tagIds: ['tag_harbor'],
-      hasOriginal: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: newWallpaperId(),
-      title: '夜城霓虹',
-      previewUrl: 'https://picsum.photos/seed/vault-neon/640/360',
-      width: 3840,
-      height: 2160,
-      tierRequired: 'max',
-      status: 'published',
-      categoryId: 'cat_city',
-      tagIds: ['tag_night'],
-      hasOriginal: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ]
-  for (const w of seeds) {
-    await kv.put(wpKey(w.id), JSON.stringify(w))
+  const tagIds = await readIndex(kv, TAG_INDEX)
+  if (tagIds.length === 0) {
+    const tags: TagRecord[] = [
+      { id: 'tag_aurora', name: '极光', slug: 'aurora', createdAt: now, updatedAt: now },
+      { id: 'tag_harbor', name: '海港', slug: 'harbor', createdAt: now, updatedAt: now },
+      { id: 'tag_night', name: '夜景', slug: 'night', createdAt: now, updatedAt: now },
+    ]
+    for (const t of tags) {
+      await kv.put(tagKey(t.id), JSON.stringify(t))
+    }
+    await writeIndex(kv, TAG_INDEX, tags.map((t) => t.id))
   }
-  await writeIndex(kv, WP_INDEX, seeds.map((w) => w.id))
-  await invalidatePublicCatalogSnapshot(kv)
+
+  // Ensure wallpaper index key exists so empty catalogs stay empty.
+  const wpIds = await readIndex(kv, WP_INDEX)
+  if (wpIds.length === 0) {
+    const raw = await kv.get(WP_INDEX)
+    if (raw == null) await writeIndex(kv, WP_INDEX, [])
+  }
 }
 
 export async function createCategory(
@@ -492,11 +455,18 @@ export function toPublicWallpaper(
   categoryName?: string | null,
   tagNames?: string[],
 ) {
+  const urls = wallpaperImageUrls(w.id)
+  // Prefer derived R2 URLs when we have an id; keep external previewUrl as-is for rare hand-filled links.
+  const stored = w.previewUrl || ''
+  const isExternal =
+    /^https?:\/\//i.test(stored) && !stored.includes('/api/wallpapers/')
   return {
     id: w.id,
     title: w.title,
     description: w.description ?? '',
-    previewUrl: w.previewUrl,
+    previewUrl: isExternal ? stored : urls.previewUrl,
+    thumbUrl: isExternal ? stored : urls.thumbUrl,
+    mediumUrl: isExternal ? stored : urls.mediumUrl,
     width: w.width,
     height: w.height,
     tierRequired: w.tierRequired,

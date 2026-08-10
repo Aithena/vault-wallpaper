@@ -29,8 +29,12 @@ export type MemberStatus = (typeof MEMBER_STATUS)[keyof typeof MEMBER_STATUS]
 export type WallpaperPublic = {
   id: string
   title: string
-  /** Public low-res / watermarked preview URL */
+  /** Full-size preview URL */
   previewUrl: string
+  /** Longest edge ≤ 100px (list thumbnails) */
+  thumbUrl?: string
+  /** Longest edge ≤ 500px (cards / grid) */
+  mediumUrl?: string
   width: number
   height: number
   tierRequired: MembershipTierId

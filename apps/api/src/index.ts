@@ -42,4 +42,9 @@ app.route('/api/admin', adminRoutes)
 
 app.notFound((c) => c.json({ error: 'not_found' }, 404))
 
+app.onError((err, c) => {
+  console.error('unhandled', err)
+  return c.json({ error: 'internal_error' }, 500)
+})
+
 export default app

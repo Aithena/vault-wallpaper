@@ -5,8 +5,10 @@ const PROFILE_KEY = 'vault_admin_profile'
 const API_BASE =
   (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') || ''
 
+/** Resolve API or asset paths against VITE_API_BASE (keeps http/blob/data as-is). */
 export function apiUrl(path: string): string {
-  if (path.startsWith('http')) return path
+  if (!path) return path
+  if (/^(https?:|blob:|data:)/i.test(path)) return path
   return `${API_BASE}${path.startsWith('/') ? path : `/${path}`}`
 }
 
