@@ -137,8 +137,27 @@ a {
   color: var(--admin-muted);
 }
 
-/* 所有弹框遮罩：半透明 + 高斯模糊 */
+/*
+ * 弹框遮罩高斯模糊。
+ * EP 的 .el-overlay 自带 overflow:auto，直接写 backdrop-filter 会失效，
+ * 改到伪元素上实现。
+ */
 .el-overlay {
+  background-color: transparent !important;
+}
+
+.el-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: rgba(15, 23, 42, 0.35);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+
+.el-overlay > * {
+  position: relative;
+  z-index: 1;
 }

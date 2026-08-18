@@ -1,0 +1,17 @@
+---
+description: Workers API 约定：路由、KV/R2、鉴权、会员与壁纸可见性。
+globs: apps/api/**
+alwaysApply: false
+---
+
+# API（`apps/api`）
+
+挂载：`src/index.ts`。C 端 `/api/{auth,me,site,analytics,wallpapers,pay}`；后台全部 `/api/admin/*`（见 `src/routes/admin.ts`）。
+
+鉴权：HMAC JWT（`src/lib/session.ts`）。C 端 `role` 缺省/`user`；后台必须 `role: 'admin'`。中间件 `requireAdmin`；菜单/按钮 `src/lib/admin-perm.ts` 的 `requireMenu` / `requireButton`。Env 类型：`src/types.ts` + `worker-configuration.d.ts`。
+
+KV：实体 `foo:${id}` + 索引 `foos:index`（或 `*:recent_v1`）。常见：`user:` / `user_email:`、`admin:` / `admin_username:`、`wallpaper:`、`order:`、`site:config`、`site:tiers`。售价以 KV `site:tiers` 为准，`MEMBERSHIP_TIERS` 只是默认。
+
+R2（`src/lib/r2-wallpaper.ts`）：`originals/{id}.jpg`、`previews/{id}.jpg`、`previews/{id}-w100.jpg`、`previews/{id}-w500.jpg`。C 端列表只出 `status=published` 且 `hasOriginal`。壁纸 id：16 位字母数字（`src/lib/wallpaper-id.ts`）。
+
+Bindings：`KV` `R2` `AI` `IMAGES`。无虎皮椒密钥走模拟支付。空库后台会种子 `admin` / `admin123`。改绑定先改 `wrangler.toml` 再 `wrangler types`。

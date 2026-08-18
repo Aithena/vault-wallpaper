@@ -1,0 +1,23 @@
+---
+description: 仓库地图与入口。新会话先读本文件，再按任务打开对应目录规则，不要全库扫描。
+alwaysApply: true
+---
+
+# awall（vault-wallpaper）
+
+pnpm monorepo。产品：壁纸下载 + 邮箱验证码登录 + 小额年费会员。域名 `awall.cc`。
+
+| 包 | 职责 | 入口（先读这些，再按需下钻） |
+|---|---|---|
+| `apps/web` | C 端 Vue3+Vite+Less | `src/router` `src/lib/api.ts` |
+| `apps/admin` | 管理端 Vue3+Element Plus | `src/config/menu.ts` `src/lib/api.ts` `docs/admin-ia.md` |
+| `apps/api` | CF Workers + Hono | `src/index.ts` → `src/routes/*`；逻辑在 `src/lib/*` |
+| `packages/shared` | 类型 / 价目默认 / 权限树 | `src/index.ts` `src/admin-permissions.ts` |
+
+本地：`pnpm dev:api`（18813，**必须 --local**）+ `dev:web`（18811）或 `dev:admin`（18812）。`/api` 代理到 18813。Node 20 + pnpm 10。密钥：`apps/api/.dev.vars`（模板 `.env.example`）。
+
+存储：KV 业务数据；R2 原图/预览；无传统数据库。共享类型改 `@vault/shared`，不要在三端各写一份。
+
+部署（日常）：资源已建好时 `pnpm deploy:api` + `pnpm deploy:web`。细节见 `deploy` 规则 / `docs/deploy-awall.cc.md`。管理端尚无正式发布脚本。
+
+不要默认打开：`docs/admin-ia.md`（改菜单/IA 才读）、`docs/admin-p0-acceptance.md`、全量 `views/`。

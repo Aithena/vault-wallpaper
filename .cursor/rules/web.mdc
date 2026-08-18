@@ -1,0 +1,15 @@
+---
+description: C 端约定：页面、API 客户端、会员下载闭环。
+globs: apps/web/**
+alwaysApply: false
+---
+
+# C 端（`apps/web`）
+
+页面很少：`/` 首页、`/login`、`/pricing`、`/pay/result`（`src/router/index.ts`）。样式 Less，无 UI 库。
+
+请求：`src/lib/api.ts` → `localStorage.vault_token` + `Authorization: Bearer`。开发走 Vite 代理；生产可用 `VITE_API_BASE`。会话：`src/lib/auth.ts` 调 `/api/me`。
+
+业务闭环：邮箱验证码登录 → 会员页下单（无密钥则模拟支付）→ 首页 `/api/wallpapers/:id/download` 拉 R2 原图。档位 `basic < pro < max`（共享包 `MEMBERSHIP_TIERS`）。站点文案来自 `/api/site`。
+
+列表/预览 URL 经 `apiUrl()` 拼接，不要写死域名。

@@ -1,0 +1,31 @@
+---
+description: Cloudflare 部署配方。改 wrangler、域名、密钥、R2 种子或执行发布时用。
+globs: apps/api/wrangler.toml,docs/deploy*.md,scripts/seed-r2*.sh
+alwaysApply: false
+---
+
+# 部署
+
+规划：`awall.cc` / `www` = Pages 项目 `awall-web`；`api.awall.cc` = Worker `vault-wallpaper-api`。管理端未挂发布脚本（预览 CORS 已预留 `admin.awall.cc`）。
+
+## 日常发布（资源已存在）
+
+在仓库根目录（需已 `wrangler login`）：
+
+```bash
+pnpm deploy:api
+pnpm deploy:web
+# 仅当要刷新夹具原图：
+pnpm seed:r2:prod
+```
+
+`deploy:api` = `apps/api` 的 `wrangler deploy`（`wrangler.toml` 已绑自定义域）。`deploy:web` = 构建 C 端再 `wrangler pages deploy dist --project-name=awall-web`。
+
+## 密钥与绑定
+
+在 `apps/api`：`wrangler secret put` → `JWT_SECRET`、`EMAIL_FROM`、可选 `RESEND_API_KEY`、虎皮椒三件套、`CF_API_TOKEN`。  
+KV `awall-kv` / R2 `awall-wallpaper` 的 id 已写在 `apps/api/wrangler.toml`。本地默认 `wrangler dev --local`；`dev:api:remote` 与生产抢免费额度，且当前 `preview_id` = 生产 KV id，不要随手 remote。
+
+未配虎皮椒 → 模拟支付。未配 Resend → C 端登录接口返回 `previewCode`。
+
+首次建资源、绑域名、Resend 验域：只读 `docs/deploy-awall.cc.md`，不要凭记忆重做清单。
