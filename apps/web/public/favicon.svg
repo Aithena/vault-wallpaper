@@ -10,13 +10,10 @@
       <stop offset="100%" stop-color="#F83C78"/>
     </linearGradient>
   </defs>
-
-  <!-- Thickness 270; pull back slightly from last nudge -->
   <g transform="rotate(26.5 411 558)">
-    <rect x="276" y="198" width="270" height="724" rx="135" fill="url(#blueStroke)"/>
+    <rect x="254" y="152" width="270" height="724" rx="135" fill="url(#blueStroke)"/>
   </g>
-
   <g transform="rotate(-26.5 613 558)">
-    <rect x="478" y="198" width="270" height="724" rx="135" fill="url(#warmStroke)"/>
+    <rect x="500" y="152" width="270" height="724" rx="135" fill="url(#warmStroke)"/>
   </g>
 </svg>
