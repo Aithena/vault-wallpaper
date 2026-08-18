@@ -9,8 +9,9 @@ import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
 import 'element-plus/es/components/loading/style/css'
 
-function defaultOverlayRoot(component: { props?: Record<string, { default?: unknown }> }) {
-  const appendTo = component.props?.appendTo
+function defaultOverlayRoot(component: unknown) {
+  const props = (component as { props?: Record<string, { default?: unknown }> }).props
+  const appendTo = props?.appendTo
   if (appendTo && typeof appendTo === 'object') {
     appendTo.default = OVERLAY_ROOT
   }
