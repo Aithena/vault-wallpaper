@@ -39,6 +39,9 @@ pnpm exec wrangler secret put EMAIL_FROM
 
 # 邮件等域名验证后再 put：
 # pnpm exec wrangler secret put RESEND_API_KEY
+
+# 管理端 AiEditor（公告等）接 DeepSeek：
+# pnpm exec wrangler secret put DEEPSEEK_API_KEY
 ```
 
 ## 3. 部署 API

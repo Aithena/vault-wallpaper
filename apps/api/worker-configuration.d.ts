@@ -21,6 +21,10 @@ interface Env {
   CF_WORKER_SCRIPT_NAME?: string
   /** R2 bucket name for analytics. */
   CF_R2_BUCKET_NAME?: string
+  /** DeepSeek API key (secret) — AiEditor proxy. */
+  DEEPSEEK_API_KEY?: string
+  /** Optional DeepSeek model id; default deepseek-v4-flash. */
+  DEEPSEEK_MODEL?: string
 }
 
 export type { Env }

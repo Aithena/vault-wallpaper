@@ -133,6 +133,7 @@
     </div>
 
     <el-dialog
+      append-to-body
       v-model="detailVisible"
       :title="detailUser ? `用户详情 · ${detailUser.email}` : '用户详情'"
       width="720px"
@@ -205,6 +206,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       v-model="logsVisible"
       :title="logsUser ? `用户操作日志 · ${logsUser.email}` : '用户操作日志'"
       width="800px"

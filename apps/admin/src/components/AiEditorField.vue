@@ -6,6 +6,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { AiEditor } from 'aieditor'
 import 'aieditor/dist/style.css'
+import { apiUrl, getAdminToken } from '../lib/api'
 
 const props = withDefaults(
   defineProps<{
@@ -31,12 +32,23 @@ let syncingFromProp = false
 onMounted(() => {
   if (!elRef.value) return
   elRef.value.style.height = props.height
+  const token = getAdminToken() || ''
   editor = new AiEditor({
     element: elRef.value,
     placeholder: props.placeholder,
     content: props.modelValue || '',
     contentRetention: false,
     lang: 'zh',
+    ai: {
+      models: {
+        openai: {
+          // Worker proxies to DeepSeek; Bearer is admin JWT (not the LLM key).
+          customUrl: () => apiUrl('/api/admin/ai/v1/chat/completions'),
+          apiKey: token,
+          model: 'deepseek-v4-flash',
+        },
+      },
+    },
     onChange: (instance) => {
       if (syncingFromProp) return
       emit('update:modelValue', instance.getHtml())

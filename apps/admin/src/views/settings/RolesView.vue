@@ -60,6 +60,7 @@
     </div>
 
     <el-dialog
+      append-to-body
       v-model="dialogVisible"
       :title="editingId ? '编辑角色' : '新增角色'"
       width="720px"

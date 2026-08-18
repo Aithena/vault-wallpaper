@@ -240,7 +240,7 @@
       />
     </div>
 
-    <el-dialog v-model="reuploadVisible" title="补传原图" width="420px" destroy-on-close>
+    <el-dialog append-to-body v-model="reuploadVisible" title="补传原图" width="420px" destroy-on-close>
       <p style="margin-bottom: 12px">壁纸 ID：{{ reuploadId }}</p>
       <input type="file" accept="image/jpeg,image/jpg,.jpg,.jpeg" @change="onReuploadPick" />
       <template #footer>
@@ -251,7 +251,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="categoryDialogVisible" title="批量改分类" width="420px" destroy-on-close>
+    <el-dialog append-to-body v-model="categoryDialogVisible" title="批量改分类" width="420px" destroy-on-close>
       <el-select v-model="categoryPick" clearable placeholder="选择分类（可清空）" style="width: 100%">
         <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
       </el-select>

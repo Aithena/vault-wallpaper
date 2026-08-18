@@ -23,7 +23,7 @@ pnpm seed:r2:prod
 
 ## 密钥与绑定
 
-在 `apps/api`：`wrangler secret put` → `JWT_SECRET`、`EMAIL_FROM`、可选 `RESEND_API_KEY`、虎皮椒三件套、`CF_API_TOKEN`。  
+在 `apps/api`：`wrangler secret put` → `JWT_SECRET`、`EMAIL_FROM`、可选 `RESEND_API_KEY`、虎皮椒三件套、`CF_API_TOKEN`、`DEEPSEEK_API_KEY`（管理端 AiEditor）。  
 KV `awall-kv` / R2 `awall-wallpaper` 的 id 已写在 `apps/api/wrangler.toml`。本地默认 `wrangler dev --local`；`dev:api:remote` 与生产抢免费额度，且当前 `preview_id` = 生产 KV id，不要随手 remote。
 
 未配虎皮椒 → 模拟支付。未配 Resend → C 端登录接口返回 `previewCode`。

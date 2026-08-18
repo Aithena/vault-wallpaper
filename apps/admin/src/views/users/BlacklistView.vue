@@ -44,7 +44,7 @@
       </el-table>
     </div>
 
-    <el-dialog v-model="createVisible" title="新增拉黑" width="480px" destroy-on-close>
+    <el-dialog append-to-body v-model="createVisible" title="新增拉黑" width="480px" destroy-on-close>
       <el-form label-width="80px">
         <el-form-item label="邮箱" required>
           <el-input v-model="form.email" placeholder="已注册用户邮箱" />

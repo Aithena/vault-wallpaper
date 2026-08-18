@@ -140,7 +140,7 @@ a {
 /*
  * 弹框遮罩高斯模糊。
  * EP 的 .el-overlay 自带 overflow:auto，直接写 backdrop-filter 会失效，
- * 改到伪元素上实现。
+ * 改到伪元素上实现。不要写 -webkit-backdrop-filter。
  */
 .el-overlay {
   background-color: transparent !important;
@@ -154,7 +154,6 @@ a {
   pointer-events: none;
   background-color: rgba(15, 23, 42, 0.35);
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 .el-overlay > * {

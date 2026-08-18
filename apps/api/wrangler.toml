@@ -43,3 +43,4 @@ binding = "IMAGES"
 # JWT_SECRET, RESEND_API_KEY, EMAIL_FROM,
 # XUNHUPAY_APPID, XUNHUPAY_APPSECRET, XUNHUPAY_GATEWAY,
 # CF_API_TOKEN  (Account Analytics Read — for admin KV usage charts)
+# DEEPSEEK_API_KEY  (AiEditor / announcements rich-text AI)
