@@ -285,6 +285,15 @@ function onCommand(cmd: string) {
   }
 }
 
+@keyframes brand-text-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
 .area-a {
   height: var(--admin-a-height);
   flex-shrink: 0;
@@ -299,6 +308,7 @@ function onCommand(cmd: string) {
   z-index: 20;
   background: linear-gradient(to right, #eee9fa, #ffffff);
   background-attachment: fixed;
+  border-bottom: 1px solid #fff;
 
   &::before {
     content: '';
@@ -326,8 +336,8 @@ function onCommand(cmd: string) {
 .brand {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  gap: 5px;
+  padding: 0 0 0 10px;
   width: var(--admin-c-width);
 }
 
@@ -342,6 +352,20 @@ function onCommand(cmd: string) {
   font-weight: 650;
   letter-spacing: -0.02em;
   white-space: nowrap;
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    #3191f1,
+    #f8a336,
+    #f84c6b,
+    #f8a336,
+    #3191f1
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: brand-text-flow 8s linear infinite;
 }
 
 .quick-search {
