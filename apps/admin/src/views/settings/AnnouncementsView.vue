@@ -51,13 +51,18 @@
       </el-table>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑公告' : '新增公告'" width="560px" destroy-on-close>
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId ? '编辑公告' : '新增公告'"
+      width="1000px"
+      destroy-on-close
+    >
       <el-form label-width="80px">
         <el-form-item label="标题" required>
           <el-input v-model="form.title" />
         </el-form-item>
         <el-form-item label="内容">
-          <el-input v-model="form.content" type="textarea" :rows="6" />
+          <AiEditorField v-model="form.content" placeholder="请输入公告内容..." />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="form.status" style="width: 100%">
@@ -77,6 +82,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import AiEditorField from '../../components/AiEditorField.vue'
 import { adminApi, ApiError } from '../../lib/api'
 import { usePermission } from '../../lib/permission'
 
