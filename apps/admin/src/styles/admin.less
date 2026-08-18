@@ -139,11 +139,13 @@ a {
 
 /*
  * 弹框遮罩高斯模糊。
- * EP 的 .el-overlay 自带 overflow:auto，直接写 backdrop-filter 会失效，
- * 改到伪元素上实现。不要写 -webkit-backdrop-filter。
+ * EP 的 .el-overlay 自带 overflow:auto，会让 backdrop-filter 失效，
+ * 所以模糊写在伪元素上；遮罩层本身也写一份，避免只作用在 overlay 时看不到。
  */
 .el-overlay {
+  overflow: visible;
   background-color: transparent !important;
+  backdrop-filter: blur(8px);
 }
 
 .el-overlay::before {

@@ -85,7 +85,7 @@
       </el-table>
     </div>
 
-    <el-dialog append-to-body v-model="createVisible" title="新增员工" width="520px" destroy-on-close>
+    <el-dialog append-to="#awall-overlays" v-model="createVisible" title="新增员工" width="520px" destroy-on-close>
       <el-form label-width="100px">
         <el-form-item label="用户名" required>
           <el-input v-model="createForm.username" placeholder="小写字母开头" />
@@ -127,7 +127,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog append-to-body v-model="editVisible" title="编辑资料" width="520px" destroy-on-close>
+    <el-dialog append-to="#awall-overlays" v-model="editVisible" title="编辑资料" width="520px" destroy-on-close>
       <el-form label-width="100px">
         <el-form-item label="用户名">
           <el-input v-model="editForm.username" />
@@ -163,7 +163,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog append-to-body v-model="passwordVisible" title="修改密码" width="420px" destroy-on-close>
+    <el-dialog append-to="#awall-overlays" v-model="passwordVisible" title="修改密码" width="420px" destroy-on-close>
       <el-form label-width="90px">
         <el-form-item label="用户名">
           <el-input :model-value="passwordForm.username" disabled />
@@ -178,7 +178,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog append-to-body v-model="emailVisible" title="绑定邮箱" width="420px" destroy-on-close>
+    <el-dialog append-to="#awall-overlays" v-model="emailVisible" title="绑定邮箱" width="420px" destroy-on-close>
       <el-form label-width="90px">
         <el-form-item label="用户名">
           <el-input :model-value="emailForm.username" disabled />

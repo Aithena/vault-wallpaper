@@ -52,7 +52,7 @@
     </div>
 
     <el-dialog
-      append-to-body
+      append-to="#awall-overlays"
       v-model="dialogVisible"
       :title="editingId ? '编辑公告' : '新增公告'"
       width="1000px"

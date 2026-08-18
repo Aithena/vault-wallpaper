@@ -118,7 +118,7 @@
     </div>
 
     <el-dialog
-      append-to-body
+      append-to="#awall-overlays"
       v-model="detailVisible"
       :title="detailOrder ? `订单详情 · ${detailOrder.id}` : '订单详情'"
       width="720px"

@@ -101,7 +101,7 @@
       />
     </div>
 
-    <el-drawer append-to-body v-model="detailOpen" title="接口日志详情" size="560px" destroy-on-close>
+    <el-drawer append-to="#awall-overlays" v-model="detailOpen" title="接口日志详情" size="560px" destroy-on-close>
       <div v-loading="detailLoading" class="detail">
         <template v-if="detail">
           <div class="kv"><span>ID</span><code>{{ detail.id }}</code></div>

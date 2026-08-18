@@ -46,7 +46,7 @@
       </el-table>
     </div>
 
-    <el-dialog append-to-body v-model="visible" :title="editingId ? '编辑标签' : '新增标签'" width="480px" destroy-on-close>
+    <el-dialog append-to="#awall-overlays" v-model="visible" :title="editingId ? '编辑标签' : '新增标签'" width="480px" destroy-on-close>
       <el-form label-width="80px">
         <el-form-item label="名称" required>
           <el-input v-model="form.name" />
